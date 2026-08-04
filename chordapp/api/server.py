@@ -306,6 +306,26 @@ def verify_source(req: VerifyRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "verified": req.verified})
 
 
+class TempoRequest(BaseModel):
+    source_key: str
+    bpm: Optional[float] = None      # None이면 자동 추정으로 되돌린다
+
+
+@app.post("/api/corrections/tempo")
+def set_tempo(req: TempoRequest) -> JSONResponse:
+    """곡별 템포 지정. 자동 추정이 배수를 틀릴 때의 확실한 탈출구.
+
+    69 BPM 발라드를 136으로 잡는 옥타브 오류가 대표적인데, 사용자는 정답을 안다.
+    """
+    if service.corrections.source(req.source_key) is None:
+        raise HTTPException(404, "등록되지 않은 곡")
+    try:
+        service.corrections.set_tempo(req.source_key, req.bpm)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return JSONResponse({"ok": True, "tempo": req.bpm})
+
+
 @app.get("/api/corrections/sources")
 def correction_sources(verified_only: bool = False) -> JSONResponse:
     return JSONResponse({

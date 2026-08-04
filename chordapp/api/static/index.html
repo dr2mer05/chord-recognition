@@ -218,6 +218,15 @@
       <span id="fixStatus" class="hint"></span>
     </div>
     <div class="row" style="margin-top:10px">
+      <label>템포</label>
+      <button id="tempoHalf" title="템포를 절반으로 (2배로 잘못 잡혔을 때)">÷2</button>
+      <input id="tempoBpm" size="5" placeholder="BPM">
+      <button id="tempoDouble" title="템포를 2배로">×2</button>
+      <button class="primary" id="tempoSet">지정</button>
+      <button id="tempoAuto">자동으로</button>
+      <span id="tempoStatus" class="hint"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
       <label><input type="checkbox" id="verified" style="vertical-align:-2px"> 이 곡 전체를 확인했다 (검수 완료)</label>
       <span class="hint" id="verifyHint">— 검수 완료한 곡만 정확도 벤치마크에 쓰인다</span>
     </div>
@@ -417,6 +426,10 @@ function render(data, elapsed) {
   state.segments = data.segments;
   state.sourceKey = data.source_key || '';
   state.corrections = data.corrections || [];
+  state.tempo = data.tempo || 120;
+  $('tempoBpm').value = Math.round(data.tempo || 0);
+  setText('tempoStatus', data.tempo_override
+    ? `${Math.round(data.tempo_override)} BPM 지정됨` : '자동 추정');
   $('verified').checked = !!data.verified;
   $('verifyHint').textContent = data.verified
     ? '— 이 곡이 정확도 벤치마크에 포함된다'
@@ -553,6 +566,33 @@ function startEdit(chip, index) {
     }
   };
 }
+
+/* ---------- 템포 지정 ---------- */
+async function applyTempo(bpm) {
+  if (!state.sourceKey) return;
+  const buttons = ['tempoHalf', 'tempoDouble', 'tempoSet', 'tempoAuto'];
+  buttons.forEach(id => $(id).disabled = true);
+  setText('tempoStatus', '<span class="spin"></span> 다시 분석 중…');
+  try {
+    await postJSON('/api/corrections/tempo', { source_key: state.sourceKey, bpm });
+    await reloadAnalysis();
+    setText('tempoStatus', bpm ? `${Math.round(bpm)} BPM으로 지정됨` : '자동 추정으로 되돌림');
+  } catch (e) {
+    setText('tempoStatus', esc(e.message), true);
+  } finally {
+    buttons.forEach(id => $(id).disabled = false);
+  }
+}
+
+$('tempoHalf').onclick = () => applyTempo(state.tempo / 2);
+$('tempoDouble').onclick = () => applyTempo(state.tempo * 2);
+$('tempoAuto').onclick = () => applyTempo(null);
+$('tempoSet').onclick = () => {
+  const bpm = parseFloat($('tempoBpm').value);
+  if (!bpm || bpm < 20 || bpm > 300) { setText('tempoStatus', '20~300 사이 BPM', true); return; }
+  applyTempo(bpm);
+};
+$('tempoBpm').addEventListener('keydown', e => { if (e.key === 'Enter') $('tempoSet').click(); });
 
 $('fixUndo').onclick = async () => {
   const seg = state.segments[state.selected];

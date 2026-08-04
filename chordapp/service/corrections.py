@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS sources (
     audio_path  TEXT NOT NULL DEFAULT '',
     duration    REAL NOT NULL DEFAULT 0,
     verified    INTEGER NOT NULL DEFAULT 0,
+    tempo       REAL,
     updated_at  REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS corrections (
@@ -72,6 +73,10 @@ class CorrectionStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
             con.executescript(_SCHEMA)
+            # 이미 만들어진 DB에도 나중에 추가된 열을 붙인다
+            existing = {row["name"] for row in con.execute("PRAGMA table_info(sources)")}
+            if "tempo" not in existing:
+                con.execute("ALTER TABLE sources ADD COLUMN tempo REAL")
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path)
@@ -95,6 +100,23 @@ class CorrectionStore:
                 "   updated_at = excluded.updated_at",
                 (source_key, label, audio_path, duration, time.time()),
             )
+
+    def set_tempo(self, source_key: str, bpm: Optional[float]) -> None:
+        """곡별 템포 지정. 자동 추정이 배수를 틀릴 때의 확실한 탈출구.
+
+        None이면 지정을 해제하고 자동 추정으로 돌아간다.
+        """
+        if bpm is not None and not (20.0 <= float(bpm) <= 300.0):
+            raise ValueError(f"템포가 범위를 벗어남: {bpm}")
+        with self._connect() as con:
+            con.execute(
+                "UPDATE sources SET tempo = ?, updated_at = ? WHERE source_key = ?",
+                (float(bpm) if bpm is not None else None, time.time(), source_key),
+            )
+
+    def tempo(self, source_key: str) -> Optional[float]:
+        row = self.source(source_key)
+        return row.get("tempo") if row else None
 
     def set_verified(self, source_key: str, verified: bool = True) -> None:
         with self._connect() as con:

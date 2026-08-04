@@ -42,6 +42,7 @@ def analyze_audio(
     snap_bars: bool = True,
     separate: Optional[bool] = None,
     separator: Optional["DemucsSeparator"] = None,
+    tempo_override: Optional[float] = None,
 ) -> AnalysisResult:
     warnings: List[str] = []
 
@@ -59,7 +60,10 @@ def analyze_audio(
         path, max_seconds=max_seconds, beats_per_bar=beats_per_bar,
         harmonic_paths=[str(p) for p in stems.accompaniment] if stems else None,
         bass_path=str(stems.bass) if stems and stems.bass else None,
+        tempo_override=tempo_override,
     )
+    if tempo_override:
+        warnings.append(f"템포를 {tempo_override:.0f} BPM으로 지정해 격자를 다시 맞춤")
     key = key_override or feats.key
     if stems is not None:
         warnings.append(

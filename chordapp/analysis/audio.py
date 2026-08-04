@@ -72,6 +72,7 @@ def extract_features(
     chroma_octaves: int = CHROMA_OCTAVES,
     harmonic_paths: Optional[Sequence[str]] = None,
     bass_path: Optional[str] = None,
+    tempo_override: Optional[float] = None,
 ) -> AudioFeatures:
     """`harmonic_paths`/`bass_path`를 주면 그 스템으로 크로마를 만든다.
 
@@ -87,12 +88,11 @@ def extract_features(
 
     y, sr = load_audio(path, sr=sr, max_seconds=max_seconds)
 
-    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP, trim=False)
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
+    tempo, beat_frames = _beat_track(onset_env, sr, tempo_override)
     tempo = float(np.atleast_1d(tempo)[0])
     beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP)
     beat_times = _ensure_beat_grid(beat_times, tempo, len(y) / sr)
-
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
     beat_frames_grid = librosa.time_to_frames(beat_times, sr=sr, hop_length=HOP)
 
     def harmonic_chroma(signal: np.ndarray) -> np.ndarray:
@@ -221,16 +221,38 @@ def _ensure_beat_grid(beat_times: np.ndarray, tempo: float, duration: float) -> 
     return beat_times
 
 
-# 템포 옥타브 오류(74 BPM 곡을 161로 잡는 것)는 아직 미해결이다.
+def _beat_track(onset_env: np.ndarray, sr: int, bpm: Optional[float] = None):
+    """비트 추적. 템포를 지정하면 그 템포로 격자를 맞춘다."""
+    import librosa
+
+    if bpm:
+        return librosa.beat.beat_track(
+            onset_envelope=onset_env, sr=sr, hop_length=HOP, bpm=float(bpm), trim=False
+        )
+    return librosa.beat.beat_track(
+        onset_envelope=onset_env, sr=sr, hop_length=HOP,
+        start_bpm=TEMPO_PRIOR_BPM, trim=False,
+    )
+
+
+# 템포 옥타브 오류에 대한 기록.
 #
-# 짝수/홀수 박의 온셋 세기를 비교해서 판별하는 방법을 시도했다가 되돌렸다.
-# 4/4 대중음악은 킥과 스네어가 번갈아 나오기 때문에 인접 박의 세기가 원래 다르고,
-# 그걸 "템포 2배"로 오판해서 격자의 절반(스네어 박)만 남겨버린다.
-# 합성 데모에서 한 곡의 정확도가 98.8% → 31.3%로 무너졌다.
+# 짝수/홀수 박의 온셋 세기를 비교해 판별하는 방법을 시도했다가 되돌렸다.
+# 4/4 대중음악은 킥과 스네어가 번갈아 나와서 인접 박의 세기가 원래 다르고,
+# 그걸 "템포 2배"로 오판해 격자의 절반(스네어 박)만 남긴다.
+# 합성 데모 한 곡이 98.8% → 31.3%로 무너졌다. 그 신호는 백비트와 템포 배수를
+# 구별하지 못한다 (실측: 밤편지는 2배 오류인데도 짝/홀 비가 1.03이었다).
 #
-# 즉 "인접 박의 세기 차이"는 백비트와 템포 배수를 구별하지 못한다.
-# 제대로 하려면 madmom 같은 전용 비트/다운비트 모델이나, 화성 리듬과의
-# 정합성까지 함께 보는 방식이 필요하다. M2로 미룬다.
+# 진짜 원인은 librosa의 템포 사전확률이 120 BPM 중심이라는 것이었다.
+# 69 BPM 발라드는 138 쪽이 사전확률상 유리해서 배음으로 끌려간다.
+# 사전확률을 90으로 낮추면 실측에서:
+#   윤하 기다리다 136 → 69.8 (정답 69)
+#   아이유 밤편지 152 → 80.7 (정답 74, 옥타브 오류는 해소)
+#   합성 데모 5곡은 전부 변화 없음
+#
+# 다만 합성 벤치마크가 이 값을 검증해주지 못하고(모든 사전확률에서 동일),
+# 빠른 곡을 절반으로 잡을 위험이 남는다. 그래서 곡별 수동 지정을 함께 둔다.
+TEMPO_PRIOR_BPM = 90.0
 
 
 def estimate_key(chroma: np.ndarray) -> Tuple[Key, float]:

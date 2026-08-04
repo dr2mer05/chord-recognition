@@ -103,6 +103,7 @@ class ChordService:
         """
         video_id = parse_video_id(url_or_id)
         vocab = vocabulary or self.vocabulary
+        tempo_override = self.corrections.tempo(f"youtube:{video_id}")
         options: Dict[str, Any] = {
             "vocabulary": vocab,
             "key": key_override,
@@ -110,6 +111,8 @@ class ChordService:
             "max_seconds": max_seconds,
             # 분리 여부로 결과가 달라지므로 캐시를 분리해야 한다
             "separate": self._separation_setting(separate),
+            # 사용자가 템포를 지정하면 격자가 통째로 달라진다
+            "tempo": tempo_override,
         }
         cache_key = self.cache.make_key(NAMESPACE_YOUTUBE, video_id, **options)
 
@@ -151,6 +154,7 @@ class ChordService:
             key_override=Key.parse(key_override) if key_override else None,
             detect_inversions=detect_inversions,
             separate=separate,
+            tempo_override=tempo_override,
             max_seconds=max_seconds,
         )
         result.source = info.title if info and info.title else video_id
@@ -198,8 +202,12 @@ class ChordService:
             "max_seconds": max_seconds,
             # 분리 여부로 결과가 달라지므로 캐시를 분리해야 한다
             "separate": self._separation_setting(separate),
+            # 사용자가 템포를 지정하면 격자가 통째로 달라진다
+            "tempo": tempo_override,
         }
         fingerprint = file_fingerprint(path)
+        tempo_override = self.corrections.tempo(f"file:{fingerprint}")
+        options["tempo"] = tempo_override
         cache_key = self.cache.make_key(NAMESPACE_AUDIO, fingerprint, **options)
 
         if use_cache:
@@ -224,6 +232,7 @@ class ChordService:
             key_override=Key.parse(key_override) if key_override else None,
             detect_inversions=detect_inversions,
             separate=separate,
+            tempo_override=tempo_override,
             max_seconds=max_seconds,
         )
         result.source = path.name
@@ -288,6 +297,7 @@ class ChordService:
         data["cache_stats"] = self.cache.stats()
         source = self.corrections.source(shown.source_key) if shown.source_key else None
         data["verified"] = bool(source and source.get("verified"))
+        data["tempo_override"] = source.get("tempo") if source else None
         data["corrections"] = [c.to_dict() for c in
                                self.corrections.corrections(shown.source_key)] if shown.source_key else []
         return data
