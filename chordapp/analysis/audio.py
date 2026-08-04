@@ -74,6 +74,7 @@ def extract_features(
     bass_path: Optional[str] = None,
     tempo_override: Optional[float] = None,
     downbeat_offset: int = 0,
+    beat_offset: Optional[float] = None,
 ) -> AudioFeatures:
     """`harmonic_paths`/`bass_path`를 주면 그 스템으로 크로마를 만든다.
 
@@ -90,10 +91,14 @@ def extract_features(
     y, sr = load_audio(path, sr=sr, max_seconds=max_seconds)
 
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
-    tempo, beat_frames = _beat_track(onset_env, sr, tempo_override)
+    manual_grid = bool(tempo_override and beat_offset is not None)
+    tempo, beat_frames = _beat_track(
+        onset_env, sr, tempo_override, beat_offset, duration=len(y) / sr
+    )
     tempo = float(np.atleast_1d(tempo)[0])
     beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP)
-    beat_times = _ensure_beat_grid(beat_times, tempo, len(y) / sr)
+    if not manual_grid:
+        beat_times = _ensure_beat_grid(beat_times, tempo, len(y) / sr)
     beat_frames_grid = librosa.time_to_frames(beat_times, sr=sr, hop_length=HOP)
 
     def harmonic_chroma(signal: np.ndarray) -> np.ndarray:
@@ -138,9 +143,18 @@ def extract_features(
     bass_chroma = _beat_sync(_denoise_chroma(bass_cqt), beat_frames_grid, bass_cqt.shape[1])
 
     key, conf = estimate_key(chroma)
-    downbeats = estimate_downbeats(
-        y, sr, beat_times, beats_per_bar, onset_env=onset_env, phase_offset=downbeat_offset
-    )
+    if manual_grid:
+        # 사용자가 찍은 첫 박이 곧 마디 첫 박이다. 여기서 추정을 다시 돌리면
+        # 사람이 확정한 걸 기계가 뒤집는 셈이 된다.
+        period = 60.0 / max(tempo, 1e-6)
+        first = int(round((float(beat_offset) - float(beat_times[0])) / period))
+        phase = (first + downbeat_offset) % max(beats_per_bar, 1)
+        downbeats = np.arange(phase, len(beat_times), max(beats_per_bar, 1), dtype=int)
+    else:
+        downbeats = estimate_downbeats(
+            y, sr, beat_times, beats_per_bar, onset_env=onset_env,
+            phase_offset=downbeat_offset,
+        )
 
     return AudioFeatures(
         source_path=path,
@@ -224,9 +238,26 @@ def _ensure_beat_grid(beat_times: np.ndarray, tempo: float, duration: float) -> 
     return beat_times
 
 
-def _beat_track(onset_env: np.ndarray, sr: int, bpm: Optional[float] = None):
-    """비트 추적. 템포를 지정하면 그 템포로 격자를 맞춘다."""
+def _beat_track(
+    onset_env: np.ndarray,
+    sr: int,
+    bpm: Optional[float] = None,
+    beat_offset: Optional[float] = None,
+    duration: Optional[float] = None,
+):
+    """비트 추적.
+
+    `bpm`과 `beat_offset`이 둘 다 오면 추적을 아예 하지 않고 균등 격자를 만든다.
+    사용자가 탭 템포로 직접 찍은 경우인데, 그때는 사람의 판단이 정답이므로
+    추적기가 다시 위상을 고르게 두면 안 된다.
+    """
     import librosa
+
+    if bpm and beat_offset is not None and duration:
+        period = 60.0 / float(bpm)
+        start = float(beat_offset) % period          # 첫 박 이전도 격자로 덮는다
+        times = np.arange(start, duration, period)
+        return float(bpm), librosa.time_to_frames(times, sr=sr, hop_length=HOP)
 
     if bpm:
         return librosa.beat.beat_track(

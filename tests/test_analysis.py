@@ -72,6 +72,27 @@ def test_key_override_is_respected(demo):
     assert result.key.name() == "Eb"
 
 
+def test_tapped_grid_is_uniform_and_anchored(demo):
+    """탭 템포로 찍으면 그 격자를 그대로 쓴다.
+
+    오디오만으로는 4/4의 4분음표와 12/8의 점4분음표를 구별할 수 없다
+    (실측: 온셋 간격이 두 해석에 똑같이 들어맞았다). 사람이 확정한 격자를
+    추적기가 다시 흔들면 안 된다.
+    """
+    from chordapp.analysis.audio import HOP, SR, extract_features
+
+    feats = extract_features(str(demo), tempo_override=46.5, beat_offset=2.0)
+    assert feats.tempo == pytest.approx(46.5)
+
+    # 프레임 양자화(HOP/SR ≈ 23ms) 말고는 완전 균등해야 한다
+    tolerance = 1.5 * HOP / SR
+    gaps = np.diff(feats.beat_times)
+    assert np.abs(gaps - 60.0 / 46.5).max() < tolerance
+
+    downbeat = feats.beat_times[int(np.atleast_1d(feats.downbeat_indices).min())]
+    assert downbeat == pytest.approx(2.0, abs=tolerance)
+
+
 def test_downbeat_phase_is_correct(demo):
     """마디 첫 박을 맞혀야 한다.
 

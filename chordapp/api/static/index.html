@@ -219,12 +219,22 @@
     </div>
     <div class="row" style="margin-top:10px">
       <label>템포</label>
-      <button id="tempoHalf" title="템포를 절반으로 (2배로 잘못 잡혔을 때)">÷2</button>
+      <button id="tempoHalf" title="2배로 잘못 잡혔을 때">÷2</button>
+      <button id="tempo15down" title="1.5배로 잘못 잡혔을 때 (12/8 등 겹박자)">÷1.5</button>
       <input id="tempoBpm" size="5" placeholder="BPM">
-      <button id="tempoDouble" title="템포를 2배로">×2</button>
+      <button id="tempo15up" title="1.5배로">×1.5</button>
+      <button id="tempoDouble" title="2배로">×2</button>
       <button class="primary" id="tempoSet">지정</button>
       <button id="tempoAuto">자동으로</button>
       <span id="tempoStatus" class="hint"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label>박자 확인</label>
+      <button id="metronome" title="검출된 박에 클릭음을 얹어 재생한다">🔊 메트로놈 켜기</button>
+      <button id="tapTempo" title="곡을 재생하면서 마디 첫 박마다 눌러 직접 찍는다">👆 탭 템포</button>
+      <button id="tapApply" class="primary hidden">이 템포로 적용</button>
+      <button id="tapReset" class="hidden">다시</button>
+      <span id="tapStatus" class="hint">재생 중 마디 첫 박마다 4번 이상 누르면 템포와 마디 시작이 함께 정해진다</span>
     </div>
     <div class="row" style="margin-top:10px">
       <label>박자</label>
@@ -439,6 +449,13 @@ function render(data, elapsed) {
   state.beatsPerBar = data.beats_per_bar || 4;
   state.meterOverride = data.meter_override || null;
   state.downbeatOffset = data.downbeat_offset || 0;
+  // 메트로놈이 쓸 격자. 첫 다운비트가 비트 배열에서 몇 번째인지도 같이 찾는다.
+  state.beats = data.beat_times || [];
+  state.lastBeat = -1;
+  const firstDown = (data.downbeats || [])[0];
+  state.downbeatIndex = firstDown === undefined ? 0
+    : state.beats.findIndex(b => Math.abs(b - firstDown) < 1e-3);
+  if (state.downbeatIndex < 0) state.downbeatIndex = 0;
   $('tempoBpm').value = Math.round(data.tempo || 0);
   setText('tempoStatus', data.tempo_override
     ? `${Math.round(data.tempo_override)} BPM 지정됨` : '자동 추정');
@@ -581,15 +598,20 @@ function startEdit(chip, index) {
 }
 
 /* ---------- 템포 지정 ---------- */
-async function applyTempo(bpm) {
+async function applyTempo(bpm, beatOffset) {
   if (!state.sourceKey) return;
-  const buttons = ['tempoHalf', 'tempoDouble', 'tempoSet', 'tempoAuto'];
+  const buttons = ['tempoHalf', 'tempoDouble', 'tempo15down', 'tempo15up', 'tempoSet', 'tempoAuto'];
   buttons.forEach(id => $(id).disabled = true);
   setText('tempoStatus', '<span class="spin"></span> 다시 분석 중…');
   try {
-    await postJSON('/api/corrections/tempo', { source_key: state.sourceKey, bpm });
+    await postJSON('/api/corrections/tempo', {
+      source_key: state.sourceKey, bpm,
+      beat_offset: beatOffset === undefined ? null : beatOffset,
+    });
     await reloadAnalysis();
-    setText('tempoStatus', bpm ? `${Math.round(bpm)} BPM으로 지정됨` : '자동 추정으로 되돌림');
+    setText('tempoStatus', bpm
+      ? `${Math.round(bpm)} BPM으로 지정됨${beatOffset !== undefined ? ' (탭으로 격자 고정)' : ''}`
+      : '자동 추정으로 되돌림');
   } catch (e) {
     setText('tempoStatus', esc(e.message), true);
   } finally {
@@ -599,12 +621,110 @@ async function applyTempo(bpm) {
 
 $('tempoHalf').onclick = () => applyTempo(state.tempo / 2);
 $('tempoDouble').onclick = () => applyTempo(state.tempo * 2);
+// 12/8 같은 겹박자에서는 오차가 2배가 아니라 1.5배로 난다.
+// (4분음표 격자와 점4분음표 격자의 비가 3:2)
+$('tempo15down').onclick = () => applyTempo(state.tempo / 1.5);
+$('tempo15up').onclick = () => applyTempo(state.tempo * 1.5);
 $('tempoAuto').onclick = () => applyTempo(null);
 $('tempoSet').onclick = () => {
   const bpm = parseFloat($('tempoBpm').value);
   if (!bpm || bpm < 20 || bpm > 300) { setText('tempoStatus', '20~300 사이 BPM', true); return; }
   applyTempo(bpm);
 };
+
+/* ---------- 메트로놈: 검출된 박을 귀로 확인 ---------- */
+let audioCtx = null;
+
+function click(strong) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.frequency.value = strong ? 1600 : 900;
+  gain.gain.setValueAtTime(strong ? 0.35 : 0.16, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + 0.07);
+}
+
+$('metronome').onclick = () => {
+  state.metronome = !state.metronome;
+  $('metronome').textContent = state.metronome ? '🔇 메트로놈 끄기' : '🔊 메트로놈 켜기';
+  $('metronome').classList.toggle('primary', state.metronome);
+  if (state.metronome && !audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  state.lastBeat = -1;
+};
+
+/** 재생 위치가 박을 지날 때 클릭음. highlight()에서 매 틱 호출된다. */
+function tickMetronome(t) {
+  if (!state.metronome || !state.beats || !state.beats.length) return;
+  let i = state.lastBeat === undefined ? -1 : state.lastBeat;
+  while (i + 1 < state.beats.length && state.beats[i + 1] <= t) i++;
+  if (i !== state.lastBeat && i >= 0 && t - state.beats[i] < 0.25) {
+    const bpb = state.beatsPerBar || 4;
+    const first = state.downbeatIndex || 0;
+    click(((i - first) % bpb + bpb) % bpb === 0);
+  }
+  state.lastBeat = i;
+}
+
+/* ---------- 탭 템포: 사람이 직접 찍는다 ---------- */
+$('tapTempo').onclick = () => {
+  const now = currentPlaybackTime();
+  if (now === null) { setText('tapStatus', '먼저 재생을 시작하세요', true); return; }
+
+  const taps = (state.taps = state.taps || []);
+  if (taps.length) {
+    // 초기화 기준을 고정값으로 두면 안 된다. 46 BPM 4/4는 한 마디가 5.2초라
+    // 4초 고정 임계값이면 탭할 때마다 초기화된다(실제로 그랬다).
+    // 이미 찍힌 간격이 있으면 그 대비로 판단하고, 없으면 넉넉하게 잡는다.
+    const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+    const typical = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+    const limit = typical ? typical * 2.5 : 12;
+    if (now - taps[taps.length - 1] > limit) taps.length = 0;
+  }
+  taps.push(now);
+
+  if (taps.length < 4) {
+    setText('tapStatus', `${taps.length}번 — 마디 첫 박마다 4번 이상`);
+    return;
+  }
+  // 마디 첫 박을 찍었으므로 간격 하나가 한 마디다
+  const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+  const bar = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const bpb = state.meterOverride || state.beatsPerBar || 4;
+  const bpm = 60 / (bar / bpb);
+  setText('tapStatus', `${taps.length}번 → ${bpm.toFixed(1)} BPM (${bpb}박/마디)`);
+  state.tapResult = { bpm, offset: taps[0] };
+  $('tapApply').classList.remove('hidden');
+  $('tapReset').classList.remove('hidden');
+};
+
+$('tapReset').onclick = () => {
+  state.taps = [];
+  state.tapResult = null;
+  $('tapApply').classList.add('hidden');
+  $('tapReset').classList.add('hidden');
+  setText('tapStatus', '재생 중 마디 첫 박마다 4번 이상');
+};
+
+$('tapApply').onclick = () => {
+  if (!state.tapResult) return;
+  const { bpm, offset } = state.tapResult;
+  $('tapReset').onclick();
+  // 첫 탭이 마디 첫 박이므로 비트 오프셋으로 그대로 넘긴다.
+  // 서버는 이때 비트 추적을 건너뛰고 균등 격자를 만든다 — 사람이 확정한 걸
+  // 기계가 다시 흔들지 않도록.
+  applyTempo(bpm, offset);
+};
+
+function currentPlaybackTime() {
+  if (state.ytPlayer && state.ytPlayer.getCurrentTime) return state.ytPlayer.getCurrentTime();
+  if (!$('player').classList.contains('hidden') && $('player').src) return $('player').currentTime;
+  return null;
+}
 $('tempoBpm').addEventListener('keydown', e => { if (e.key === 'Enter') $('tempoSet').click(); });
 
 /* ---------- 박자 / 마디 시작 ---------- */
@@ -746,6 +866,7 @@ function startSync() {
 $('player').addEventListener('timeupdate', () => highlight($('player').currentTime));
 
 function highlight(t) {
+  tickMetronome(t);
   if (!state.segments.length) return;
   document.querySelectorAll('.chip').forEach(chip => {
     const seg = state.segments[+chip.dataset.i];

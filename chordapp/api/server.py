@@ -308,7 +308,8 @@ def verify_source(req: VerifyRequest) -> JSONResponse:
 
 class TempoRequest(BaseModel):
     source_key: str
-    bpm: Optional[float] = None      # None이면 자동 추정으로 되돌린다
+    bpm: Optional[float] = None       # None이면 자동 추정으로 되돌린다
+    beat_offset: Optional[float] = None   # 첫 박의 시각(초). 탭 템포가 채운다
 
 
 @app.post("/api/corrections/tempo")
@@ -320,10 +321,10 @@ def set_tempo(req: TempoRequest) -> JSONResponse:
     if service.corrections.source(req.source_key) is None:
         raise HTTPException(404, "등록되지 않은 곡")
     try:
-        service.corrections.set_tempo(req.source_key, req.bpm)
+        service.corrections.set_tempo(req.source_key, req.bpm, req.beat_offset)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    return JSONResponse({"ok": True, "tempo": req.bpm})
+    return JSONResponse({"ok": True, "tempo": req.bpm, "beat_offset": req.beat_offset})
 
 
 class MeterRequest(BaseModel):

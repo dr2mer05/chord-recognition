@@ -107,6 +107,7 @@ class ChordService:
         tempo_override = self.corrections.tempo(key_)
         beats_per_bar = self.corrections.beats_per_bar(key_) or 4
         downbeat_offset = self.corrections.downbeat_offset(key_)
+        beat_offset = self.corrections.beat_offset(key_)
         options: Dict[str, Any] = {
             "vocabulary": vocab,
             "key": key_override,
@@ -116,7 +117,7 @@ class ChordService:
             "separate": self._separation_setting(separate),
             # 사용자가 템포를 지정하면 격자가 통째로 달라진다
             "tempo": tempo_override,
-            "meter": (beats_per_bar, downbeat_offset),
+            "meter": (beats_per_bar, downbeat_offset, beat_offset),
         }
         cache_key = self.cache.make_key(NAMESPACE_YOUTUBE, video_id, **options)
 
@@ -161,6 +162,7 @@ class ChordService:
             tempo_override=tempo_override,
             beats_per_bar=beats_per_bar,
             downbeat_offset=downbeat_offset,
+            beat_offset=beat_offset,
             max_seconds=max_seconds,
         )
         result.source = info.title if info and info.title else video_id
@@ -206,6 +208,7 @@ class ChordService:
         tempo_override = self.corrections.tempo(key_)
         beats_per_bar = self.corrections.beats_per_bar(key_) or 4
         downbeat_offset = self.corrections.downbeat_offset(key_)
+        beat_offset = self.corrections.beat_offset(key_)
         options: Dict[str, Any] = {
             "vocabulary": vocab,
             "key": key_override,
@@ -215,7 +218,7 @@ class ChordService:
             "separate": self._separation_setting(separate),
             # 템포·박자를 지정하면 격자가 통째로 달라진다
             "tempo": tempo_override,
-            "meter": (beats_per_bar, downbeat_offset),
+            "meter": (beats_per_bar, downbeat_offset, beat_offset),
         }
         cache_key = self.cache.make_key(NAMESPACE_AUDIO, fingerprint, **options)
 
@@ -244,6 +247,7 @@ class ChordService:
             tempo_override=tempo_override,
             beats_per_bar=beats_per_bar,
             downbeat_offset=downbeat_offset,
+            beat_offset=beat_offset,
             max_seconds=max_seconds,
         )
         result.source = path.name

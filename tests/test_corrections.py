@@ -87,6 +87,25 @@ def test_tempo_override_rejects_absurd_values(store, bpm):
         store.set_tempo(KEY, bpm)
 
 
+def test_tap_tempo_stores_the_grid_offset(store):
+    """탭 템포는 템포와 첫 박 시각을 함께 남긴다.
+
+    오디오만으로는 4/4의 4분음표와 12/8의 점4분음표를 구별할 수 없어서
+    (온셋 간격이 두 해석에 똑같이 들어맞는다) 사람이 찍은 격자가 필요하다.
+    """
+    store.record_source(KEY)
+    store.set_tempo(KEY, 46.5, beat_offset=2.0)
+    assert store.tempo(KEY) == 46.5
+    assert store.beat_offset(KEY) == 2.0
+
+    # 템포만 지정하면 격자는 다시 추적기가 잡는다
+    store.set_tempo(KEY, 69.0)
+    assert store.beat_offset(KEY) is None
+
+    store.set_tempo(KEY, None, beat_offset=2.0)   # 템포 없이 오프셋만은 무의미
+    assert store.beat_offset(KEY) is None
+
+
 def test_meter_override_roundtrip(store):
     """박자표 자동 판별은 신뢰할 수 없어서 지정받는다."""
     store.record_source(KEY)

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS sources (
     tempo           REAL,
     beats_per_bar   INTEGER,
     downbeat_offset INTEGER NOT NULL DEFAULT 0,
+    beat_offset     REAL,
     updated_at      REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS corrections (
@@ -81,6 +82,7 @@ class CorrectionStore:
                 ("tempo", "REAL"),
                 ("beats_per_bar", "INTEGER"),
                 ("downbeat_offset", "INTEGER NOT NULL DEFAULT 0"),
+                ("beat_offset", "REAL"),
             ):
                 if column not in existing:
                     con.execute(f"ALTER TABLE sources ADD COLUMN {column} {ddl}")
@@ -108,18 +110,34 @@ class CorrectionStore:
                 (source_key, label, audio_path, duration, time.time()),
             )
 
-    def set_tempo(self, source_key: str, bpm: Optional[float]) -> None:
+    def set_tempo(
+        self, source_key: str, bpm: Optional[float], beat_offset: Optional[float] = None
+    ) -> None:
         """곡별 템포 지정. 자동 추정이 배수를 틀릴 때의 확실한 탈출구.
 
-        None이면 지정을 해제하고 자동 추정으로 돌아간다.
+        `beat_offset`(첫 박의 시각, 초)까지 주면 비트 추적을 아예 건너뛰고
+        균등 격자를 만든다. 탭 템포로 사용자가 직접 찍은 경우가 이에 해당한다.
+        오디오만으로는 4/4의 4분음표와 12/8의 점4분음표를 구별할 수 없어서
+        (실측: 온셋 간격이 두 해석에 똑같이 들어맞았다) 사람의 입력이 필요하다.
+
+        bpm이 None이면 지정을 해제하고 자동 추정으로 돌아간다.
         """
         if bpm is not None and not (20.0 <= float(bpm) <= 300.0):
             raise ValueError(f"템포가 범위를 벗어남: {bpm}")
         with self._connect() as con:
             con.execute(
-                "UPDATE sources SET tempo = ?, updated_at = ? WHERE source_key = ?",
-                (float(bpm) if bpm is not None else None, time.time(), source_key),
+                "UPDATE sources SET tempo = ?, beat_offset = ?, updated_at = ?"
+                " WHERE source_key = ?",
+                (
+                    float(bpm) if bpm is not None else None,
+                    float(beat_offset) if (bpm and beat_offset is not None) else None,
+                    time.time(), source_key,
+                ),
             )
+
+    def beat_offset(self, source_key: str) -> Optional[float]:
+        row = self.source(source_key)
+        return row.get("beat_offset") if row else None
 
     def tempo(self, source_key: str) -> Optional[float]:
         row = self.source(source_key)

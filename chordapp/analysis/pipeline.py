@@ -1,4 +1,4 @@
-"""오디오 → 코드 진행. 파이프라인 1-2의 [C] 분기."""
+﻿"""오디오 → 코드 진행. 파이프라인 1-2의 [C] 분기."""
 
 from __future__ import annotations
 
@@ -44,6 +44,7 @@ def analyze_audio(
     separator: Optional["DemucsSeparator"] = None,
     tempo_override: Optional[float] = None,
     downbeat_offset: int = 0,
+    beat_offset: Optional[float] = None,
 ) -> AnalysisResult:
     warnings: List[str] = []
 
@@ -63,6 +64,7 @@ def analyze_audio(
         bass_path=str(stems.bass) if stems and stems.bass else None,
         tempo_override=tempo_override,
         downbeat_offset=downbeat_offset,
+        beat_offset=beat_offset,
     )
     if tempo_override:
         warnings.append(f"템포를 {tempo_override:.0f} BPM으로 지정해 격자를 다시 맞춤")
