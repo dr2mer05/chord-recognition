@@ -1,0 +1,16 @@
+# API 키. 절대 커밋하지 말 것.
+.env
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 생성물 — 저작권 있는 음원이 실수로 커밋되는 걸 막는다
+data/
+!data/chord_db.sample.json
+*.wav
+*.mp3
+*.flac
+*.m4a

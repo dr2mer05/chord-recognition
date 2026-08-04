@@ -1,0 +1,20 @@
+# --- 코어 (화성학 엔진만 쓸 거면 이것도 필요 없다: theory/는 표준 라이브러리만 사용) ---
+numpy>=1.22,<2.0
+
+# --- 오디오 분석 ---
+librosa>=0.10,<0.11
+scipy>=1.7
+soundfile>=0.12
+
+# --- 서버 ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+pydantic>=2.0
+
+# --- 개발 ---
+pytest>=7.0
+
+# --- 선택: 설치하면 앙상블에 자동 합류 ---
+# autochord           # 사전학습 딥러닝. tensorflow 의존성이 무거움
+# chord-extractor     # Chordino(DSP). vamp 플러그인 별도 설치 필요
