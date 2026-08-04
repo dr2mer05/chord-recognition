@@ -73,6 +73,7 @@ def extract_features(
     harmonic_paths: Optional[Sequence[str]] = None,
     bass_path: Optional[str] = None,
     tempo_override: Optional[float] = None,
+    downbeat_offset: int = 0,
 ) -> AudioFeatures:
     """`harmonic_paths`/`bass_path`를 주면 그 스템으로 크로마를 만든다.
 
@@ -137,7 +138,9 @@ def extract_features(
     bass_chroma = _beat_sync(_denoise_chroma(bass_cqt), beat_frames_grid, bass_cqt.shape[1])
 
     key, conf = estimate_key(chroma)
-    downbeats = estimate_downbeats(y, sr, beat_times, beats_per_bar, onset_env=onset_env)
+    downbeats = estimate_downbeats(
+        y, sr, beat_times, beats_per_bar, onset_env=onset_env, phase_offset=downbeat_offset
+    )
 
     return AudioFeatures(
         source_path=path,
@@ -284,6 +287,7 @@ def estimate_downbeats(
     beat_times: np.ndarray,
     beats_per_bar: int = 4,
     onset_env: Optional[np.ndarray] = None,
+    phase_offset: int = 0,
 ) -> np.ndarray:
     """마디 첫 박 추정.
 
@@ -322,7 +326,7 @@ def estimate_downbeats(
         return (scores - scores.min()) / span if span > 0 else np.zeros_like(scores)
 
     combined = phase_scores(low_env) - BACKBEAT_PENALTY * phase_scores(onset_env)
-    best_phase = int(np.argmax(combined))
+    best_phase = (int(np.argmax(combined)) + int(phase_offset)) % beats_per_bar
     return np.arange(best_phase, len(beat_times), beats_per_bar, dtype=int)
 
 

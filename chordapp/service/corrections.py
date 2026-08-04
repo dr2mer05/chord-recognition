@@ -35,8 +35,10 @@ CREATE TABLE IF NOT EXISTS sources (
     audio_path  TEXT NOT NULL DEFAULT '',
     duration    REAL NOT NULL DEFAULT 0,
     verified    INTEGER NOT NULL DEFAULT 0,
-    tempo       REAL,
-    updated_at  REAL NOT NULL
+    tempo           REAL,
+    beats_per_bar   INTEGER,
+    downbeat_offset INTEGER NOT NULL DEFAULT 0,
+    updated_at      REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS corrections (
     source_key  TEXT NOT NULL,
@@ -75,8 +77,13 @@ class CorrectionStore:
             con.executescript(_SCHEMA)
             # 이미 만들어진 DB에도 나중에 추가된 열을 붙인다
             existing = {row["name"] for row in con.execute("PRAGMA table_info(sources)")}
-            if "tempo" not in existing:
-                con.execute("ALTER TABLE sources ADD COLUMN tempo REAL")
+            for column, ddl in (
+                ("tempo", "REAL"),
+                ("beats_per_bar", "INTEGER"),
+                ("downbeat_offset", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if column not in existing:
+                    con.execute(f"ALTER TABLE sources ADD COLUMN {column} {ddl}")
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path)
@@ -117,6 +124,40 @@ class CorrectionStore:
     def tempo(self, source_key: str) -> Optional[float]:
         row = self.source(source_key)
         return row.get("tempo") if row else None
+
+    def set_meter(
+        self,
+        source_key: str,
+        beats_per_bar: Optional[int] = None,
+        downbeat_offset: Optional[int] = None,
+    ) -> None:
+        """곡별 박자표와 마디 시작 위치.
+
+        박자표 자동 판별은 넣지 않았다. 저역 온셋의 위상 대비로 구별해 보려 했는데
+        정답이 4/4인 합성곡에서도 6박이 더 높게 나와서 신뢰할 수 없었다.
+        사람은 한 번 들으면 아는 정보라 지정받는 편이 확실하다.
+        """
+        if beats_per_bar is not None and not (2 <= int(beats_per_bar) <= 12):
+            raise ValueError(f"박자가 범위를 벗어남: {beats_per_bar}")
+
+        # 두 값을 항상 함께 쓴다. "안 넘겼으니 유지"와 "None이니 해제"를 구분하려다
+        # 조건문이 꼬여서 해제가 안 됐다. 호출부가 늘 둘 다 넘기는 편이 명확하다.
+        bpb = int(beats_per_bar) if beats_per_bar else None
+        offset = int(downbeat_offset or 0) % (bpb or 4)
+        with self._connect() as con:
+            con.execute(
+                "UPDATE sources SET beats_per_bar = ?, downbeat_offset = ?, updated_at = ?"
+                " WHERE source_key = ?",
+                (bpb, offset, time.time(), source_key),
+            )
+
+    def beats_per_bar(self, source_key: str) -> Optional[int]:
+        row = self.source(source_key)
+        return row.get("beats_per_bar") if row else None
+
+    def downbeat_offset(self, source_key: str) -> int:
+        row = self.source(source_key)
+        return int(row.get("downbeat_offset") or 0) if row else 0
 
     def set_verified(self, source_key: str, verified: bool = True) -> None:
         with self._connect() as con:

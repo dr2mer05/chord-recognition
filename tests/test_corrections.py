@@ -69,6 +69,56 @@ def test_verified_flag_gates_the_benchmark_set(store):
     assert store.stats()["verified"] == 1
 
 
+# --- 템포 / 박자 지정 --------------------------------------------------
+
+def test_tempo_override_roundtrip(store):
+    store.record_source(KEY)
+    assert store.tempo(KEY) is None
+    store.set_tempo(KEY, 69.0)
+    assert store.tempo(KEY) == 69.0
+    store.set_tempo(KEY, None)          # 자동 추정으로 복귀
+    assert store.tempo(KEY) is None
+
+
+@pytest.mark.parametrize("bpm", [0, 19, 301, 1000])
+def test_tempo_override_rejects_absurd_values(store, bpm):
+    store.record_source(KEY)
+    with pytest.raises(ValueError):
+        store.set_tempo(KEY, bpm)
+
+
+def test_meter_override_roundtrip(store):
+    """박자표 자동 판별은 신뢰할 수 없어서 지정받는다."""
+    store.record_source(KEY)
+    assert store.beats_per_bar(KEY) is None
+    assert store.downbeat_offset(KEY) == 0
+
+    store.set_meter(KEY, beats_per_bar=6)
+    assert store.beats_per_bar(KEY) == 6
+
+    store.set_meter(KEY, beats_per_bar=6, downbeat_offset=2)
+    assert store.downbeat_offset(KEY) == 2
+
+    store.set_meter(KEY, beats_per_bar=None, downbeat_offset=0)   # 자동으로 복귀
+    assert store.beats_per_bar(KEY) is None
+    assert store.downbeat_offset(KEY) == 0
+
+
+def test_downbeat_offset_wraps_within_the_bar(store):
+    store.record_source(KEY)
+    store.set_meter(KEY, beats_per_bar=4, downbeat_offset=5)
+    assert store.downbeat_offset(KEY) == 1        # 5 % 4
+    store.set_meter(KEY, beats_per_bar=4, downbeat_offset=-1)
+    assert store.downbeat_offset(KEY) == 3        # 파이썬 모듈로
+
+
+@pytest.mark.parametrize("bpb", [1, 0, 13, 20])
+def test_meter_rejects_implausible_values(store, bpb):
+    store.record_source(KEY)
+    with pytest.raises(ValueError):
+        store.set_meter(KEY, beats_per_bar=bpb)
+
+
 # --- 교정 적용 --------------------------------------------------------
 
 def test_apply_replaces_matching_segment():

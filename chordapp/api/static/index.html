@@ -227,6 +227,15 @@
       <span id="tempoStatus" class="hint"></span>
     </div>
     <div class="row" style="margin-top:10px">
+      <label>박자</label>
+      <span id="meterButtons"></span>
+      <label style="margin-left:8px">마디 시작</label>
+      <button id="shiftBack" title="마디 시작을 한 박 앞으로">◀</button>
+      <span id="offsetLabel" class="hint">+0박</span>
+      <button id="shiftFwd" title="마디 시작을 한 박 뒤로">▶</button>
+      <span id="meterStatus" class="hint"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
       <label><input type="checkbox" id="verified" style="vertical-align:-2px"> 이 곡 전체를 확인했다 (검수 완료)</label>
       <span class="hint" id="verifyHint">— 검수 완료한 곡만 정확도 벤치마크에 쓰인다</span>
     </div>
@@ -427,9 +436,13 @@ function render(data, elapsed) {
   state.sourceKey = data.source_key || '';
   state.corrections = data.corrections || [];
   state.tempo = data.tempo || 120;
+  state.beatsPerBar = data.beats_per_bar || 4;
+  state.meterOverride = data.meter_override || null;
+  state.downbeatOffset = data.downbeat_offset || 0;
   $('tempoBpm').value = Math.round(data.tempo || 0);
   setText('tempoStatus', data.tempo_override
     ? `${Math.round(data.tempo_override)} BPM 지정됨` : '자동 추정');
+  renderMeterControls();
   $('verified').checked = !!data.verified;
   $('verifyHint').textContent = data.verified
     ? '— 이 곡이 정확도 벤치마크에 포함된다'
@@ -593,6 +606,43 @@ $('tempoSet').onclick = () => {
   applyTempo(bpm);
 };
 $('tempoBpm').addEventListener('keydown', e => { if (e.key === 'Enter') $('tempoSet').click(); });
+
+/* ---------- 박자 / 마디 시작 ---------- */
+const METERS = [2, 3, 4, 6, 0];   // 0 = 자동(기본 4박)
+
+async function applyMeter(beatsPerBar, offset) {
+  if (!state.sourceKey) return;
+  setText('meterStatus', '<span class="spin"></span> 다시 분석 중…');
+  try {
+    await postJSON('/api/corrections/meter', {
+      source_key: state.sourceKey,
+      beats_per_bar: beatsPerBar,
+      downbeat_offset: offset,
+    });
+    await reloadAnalysis();
+    setText('meterStatus', '');
+  } catch (e) {
+    setText('meterStatus', esc(e.message), true);
+  }
+}
+
+function renderMeterControls() {
+  const override = state.meterOverride;            // null이면 자동
+  $('meterButtons').innerHTML = METERS.map(m => {
+    const on = m === 0 ? !override : override === m;
+    return `<button data-m="${m}"${on ? ' class="primary"' : ''}>${m === 0 ? '자동' : m + '박'}</button>`;
+  }).join(' ');
+  [...$('meterButtons').querySelectorAll('button')].forEach(b => {
+    // 박자를 바꾸면 마디 시작도 초기화한다 (다른 박자에서의 오프셋은 의미가 없다)
+    b.onclick = () => applyMeter(+b.dataset.m || null, 0);
+  });
+  $('offsetLabel').textContent = `+${state.downbeatOffset || 0}박`;
+}
+
+$('shiftBack').onclick = () =>
+  applyMeter(state.meterOverride || state.beatsPerBar, (state.downbeatOffset || 0) - 1);
+$('shiftFwd').onclick = () =>
+  applyMeter(state.meterOverride || state.beatsPerBar, (state.downbeatOffset || 0) + 1);
 
 $('fixUndo').onclick = async () => {
   const seg = state.segments[state.selected];

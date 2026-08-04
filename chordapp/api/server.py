@@ -326,6 +326,28 @@ def set_tempo(req: TempoRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "tempo": req.bpm})
 
 
+class MeterRequest(BaseModel):
+    source_key: str
+    beats_per_bar: Optional[int] = None    # None이면 기본값(4)으로
+    downbeat_offset: Optional[int] = None  # 마디 시작을 몇 박 밀지
+
+
+@app.post("/api/corrections/meter")
+def set_meter(req: MeterRequest) -> JSONResponse:
+    """곡별 박자표와 마디 시작 위치.
+
+    박자표 자동 판별은 넣지 않았다 — 저역 온셋의 위상 대비로 구별해 보려 했는데
+    정답이 4/4인 곡에서도 6박이 더 높게 나와 신뢰할 수 없었다.
+    """
+    if service.corrections.source(req.source_key) is None:
+        raise HTTPException(404, "등록되지 않은 곡")
+    try:
+        service.corrections.set_meter(req.source_key, req.beats_per_bar, req.downbeat_offset)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/corrections/sources")
 def correction_sources(verified_only: bool = False) -> JSONResponse:
     return JSONResponse({

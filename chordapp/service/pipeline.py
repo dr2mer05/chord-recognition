@@ -103,7 +103,10 @@ class ChordService:
         """
         video_id = parse_video_id(url_or_id)
         vocab = vocabulary or self.vocabulary
-        tempo_override = self.corrections.tempo(f"youtube:{video_id}")
+        key_ = f"youtube:{video_id}"
+        tempo_override = self.corrections.tempo(key_)
+        beats_per_bar = self.corrections.beats_per_bar(key_) or 4
+        downbeat_offset = self.corrections.downbeat_offset(key_)
         options: Dict[str, Any] = {
             "vocabulary": vocab,
             "key": key_override,
@@ -113,6 +116,7 @@ class ChordService:
             "separate": self._separation_setting(separate),
             # 사용자가 템포를 지정하면 격자가 통째로 달라진다
             "tempo": tempo_override,
+            "meter": (beats_per_bar, downbeat_offset),
         }
         cache_key = self.cache.make_key(NAMESPACE_YOUTUBE, video_id, **options)
 
@@ -155,6 +159,8 @@ class ChordService:
             detect_inversions=detect_inversions,
             separate=separate,
             tempo_override=tempo_override,
+            beats_per_bar=beats_per_bar,
+            downbeat_offset=downbeat_offset,
             max_seconds=max_seconds,
         )
         result.source = info.title if info and info.title else video_id
@@ -195,6 +201,11 @@ class ChordService:
     ) -> AnalysisResult:
         path = Path(path)
         vocab = vocabulary or self.vocabulary
+        fingerprint = file_fingerprint(path)
+        key_ = f"file:{fingerprint}"
+        tempo_override = self.corrections.tempo(key_)
+        beats_per_bar = self.corrections.beats_per_bar(key_) or 4
+        downbeat_offset = self.corrections.downbeat_offset(key_)
         options: Dict[str, Any] = {
             "vocabulary": vocab,
             "key": key_override,
@@ -202,12 +213,10 @@ class ChordService:
             "max_seconds": max_seconds,
             # 분리 여부로 결과가 달라지므로 캐시를 분리해야 한다
             "separate": self._separation_setting(separate),
-            # 사용자가 템포를 지정하면 격자가 통째로 달라진다
+            # 템포·박자를 지정하면 격자가 통째로 달라진다
             "tempo": tempo_override,
+            "meter": (beats_per_bar, downbeat_offset),
         }
-        fingerprint = file_fingerprint(path)
-        tempo_override = self.corrections.tempo(f"file:{fingerprint}")
-        options["tempo"] = tempo_override
         cache_key = self.cache.make_key(NAMESPACE_AUDIO, fingerprint, **options)
 
         if use_cache:
@@ -233,6 +242,8 @@ class ChordService:
             detect_inversions=detect_inversions,
             separate=separate,
             tempo_override=tempo_override,
+            beats_per_bar=beats_per_bar,
+            downbeat_offset=downbeat_offset,
             max_seconds=max_seconds,
         )
         result.source = path.name
@@ -298,6 +309,8 @@ class ChordService:
         source = self.corrections.source(shown.source_key) if shown.source_key else None
         data["verified"] = bool(source and source.get("verified"))
         data["tempo_override"] = source.get("tempo") if source else None
+        data["meter_override"] = source.get("beats_per_bar") if source else None
+        data["downbeat_offset"] = int(source.get("downbeat_offset") or 0) if source else 0
         data["corrections"] = [c.to_dict() for c in
                                self.corrections.corrections(shown.source_key)] if shown.source_key else []
         return data
