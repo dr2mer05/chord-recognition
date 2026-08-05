@@ -237,6 +237,14 @@
       <span id="tapStatus" class="hint">재생 중 마디 첫 박마다 4번 이상 누르면 템포와 마디 시작이 함께 정해진다</span>
     </div>
     <div class="row" style="margin-top:10px">
+      <label>표시 보정</label>
+      <button id="syncBack" title="하이라이트를 앞당긴다">−50ms</button>
+      <span id="syncLabel" class="hint">0 ms</span>
+      <button id="syncFwd" title="하이라이트를 늦춘다">+50ms</button>
+      <button id="syncZero">0으로</button>
+      <span class="hint">— 하이라이트가 소리보다 늦거나 이르면 여기서 맞춘다 (곡과 무관하게 저장)</span>
+    </div>
+    <div class="row" style="margin-top:10px">
       <label>박자</label>
       <span id="meterButtons"></span>
       <label style="margin-left:8px">마디 시작</label>
@@ -259,7 +267,12 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const state = { rows: [], segments: [], selected: -1, ytPlayer: null, timer: null, caps: {} };
+const state = {
+  rows: [], segments: [], selected: -1, ytPlayer: null, timer: null, caps: {},
+  chipsBySegment: {}, activeSegment: -1, raf: null, clock: null,
+  // 재생 위치 보정(초). 오디오 출력 지연은 기기마다 달라서 사용자가 맞출 수 있게 둔다.
+  syncOffset: parseFloat(localStorage.getItem('syncOffset') || '0') || 0,
+};
 
 /* ---------- 탭 ---------- */
 const TABS = { 'tab-yt': 'view-yt', 'tab-prog': 'view-prog', 'tab-file': 'view-file' };
@@ -513,8 +526,12 @@ function renderChart(rows, segments, bars) {
       <div class="chips" style="grid-template-columns:repeat(${cols},1fr)">${chips}</div></div>`;
   }).join('');
 
+  // 구간별 칸 목록을 미리 만들어 둔다 (매 프레임 DOM을 훑지 않기 위해)
+  state.chipsBySegment = {};
+  state.activeSegment = -1;
   [...chart.querySelectorAll('.chip')].forEach(chip => {
     if (chip.dataset.i === undefined) return;
+    (state.chipsBySegment[+chip.dataset.i] ||= []).push(chip);
     chip.onclick = () => {
       const i = +chip.dataset.i;
       seek(i);
@@ -643,6 +660,18 @@ $('tempoSet').onclick = () => {
   if (!bpm || bpm < 20 || bpm > 300) { setText('tempoStatus', '20~300 사이 BPM', true); return; }
   applyTempo(bpm);
 };
+
+/* ---------- 표시 보정 ---------- */
+function setSyncOffset(seconds) {
+  state.syncOffset = Math.max(-1, Math.min(1, seconds));
+  localStorage.setItem('syncOffset', String(state.syncOffset));
+  $('syncLabel').textContent = `${Math.round(state.syncOffset * 1000)} ms`;
+  state.clock = null;
+}
+$('syncBack').onclick = () => setSyncOffset(state.syncOffset - 0.05);
+$('syncFwd').onclick = () => setSyncOffset(state.syncOffset + 0.05);
+$('syncZero').onclick = () => setSyncOffset(0);
+setSyncOffset(state.syncOffset);
 
 /* ---------- 메트로놈: 검출된 박을 귀로 확인 ---------- */
 let audioCtx = null;
@@ -840,7 +869,15 @@ function mountYouTube(videoId) {
     state.ytPlayer = new YT.Player('yt', {
       videoId,
       playerVars: { playsinline: 1, rel: 0 },
-      events: { onReady: startSync },
+      events: {
+        onReady: startSync,
+        // 재생 중일 때만 루프를 돌린다. 멈췄으면 마지막 위치만 한 번 반영.
+        onStateChange: e => {
+          state.clock = null;
+          if (e.data === YT.PlayerState.PLAYING) startSync();
+          else { stopSync(); highlightOnce(); }
+        },
+      },
     });
   };
   if (window.YT && window.YT.Player) build();
@@ -856,8 +893,7 @@ function mountYouTube(videoId) {
 }
 
 function teardownPlayer() {
-  clearInterval(state.timer);
-  state.timer = null;
+  stopSync();
   if (state.ytPlayer && state.ytPlayer.destroy) state.ytPlayer.destroy();
   state.ytPlayer = null;
   $('yt').innerHTML = '';
@@ -866,34 +902,106 @@ function teardownPlayer() {
   $('player').removeAttribute('src');
 }
 
-function startSync() {
-  clearInterval(state.timer);
-  // 유튜브 플레이어는 timeupdate 이벤트가 없어서 폴링해야 한다.
-  state.timer = setInterval(() => {
-    if (!state.ytPlayer || !state.ytPlayer.getCurrentTime) return;
-    highlight(state.ytPlayer.getCurrentTime());
-  }, 200);
+/**
+ * 재생 위치. 유튜브 플레이어는 timeupdate 이벤트가 없고 getCurrentTime()도
+ * 자체 주기로만 갱신돼서 계단식으로 튄다. 값이 갱신될 때마다 기준점을 잡고
+ * 그 사이는 실제 흐른 시간으로 보간해야 매끄럽다.
+ *
+ * (예전에는 200ms 간격으로 폴링만 했다. 폴링 지연 0~200ms에 getCurrentTime()
+ *  자체의 지연까지 겹쳐서 하이라이트가 눈에 띄게 늦었다.)
+ */
+function playbackTime() {
+  const audio = $('player');
+  if (!audio.classList.contains('hidden') && audio.getAttribute('src')) {
+    return audio.currentTime + state.syncOffset;
+  }
+  const p = state.ytPlayer;
+  if (!p || !p.getCurrentTime) return null;
+
+  const raw = p.getCurrentTime();
+  const now = performance.now();
+  const playing = !p.getPlayerState || p.getPlayerState() === 1;
+  const clock = state.clock;
+
+  if (!playing || !clock || raw !== clock.raw) {
+    state.clock = { raw, at: now };
+    return raw + state.syncOffset;
+  }
+  // 값이 그대로면 흐른 시간만큼 보간. 너무 오래 튀지 않게 상한을 둔다.
+  const drift = Math.min((now - clock.at) / 1000, 0.5);
+  return clock.raw + drift + state.syncOffset;
 }
 
-$('player').addEventListener('timeupdate', () => highlight($('player').currentTime));
+function startSync() {
+  stopSync();
+  state.clock = null;
+  const loop = () => {
+    state.raf = requestAnimationFrame(loop);
+    const t = playbackTime();
+    if (t !== null) highlight(t);
+  };
+  state.raf = requestAnimationFrame(loop);
+}
+
+function stopSync() {
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = null;
+  clearInterval(state.timer);
+  state.timer = null;
+}
+
+// 로컬 파일은 <audio>의 currentTime이 정확하므로 같은 루프를 그대로 쓴다.
+// 재생 중이 아닐 때는 루프를 돌리지 않되, 위치가 바뀌면 한 번은 반영한다.
+$('player').addEventListener('play', startSync);
+$('player').addEventListener('pause', () => { stopSync(); highlightOnce(); });
+$('player').addEventListener('ended', stopSync);
+$('player').addEventListener('seeked', () => { state.clock = null; highlightOnce(); });
+
+function highlightOnce() {
+  const t = playbackTime();
+  if (t !== null) highlight(t);
+}
 
 function highlight(t) {
   tickMetronome(t);
   if (!state.segments.length) return;
-  document.querySelectorAll('.chip').forEach(chip => {
-    const seg = state.segments[+chip.dataset.i];
-    if (!seg) return;
-    const on = t >= seg.start && t < seg.end;
-    chip.classList.toggle('on', on);
-    chip.querySelector('.bar').style.width =
-      on ? Math.min(100, ((t - seg.start) / Math.max(seg.end - seg.start, .001)) * 100) + '%' : '0';
-    if (on && +chip.dataset.i !== state.selected) selectChord(+chip.dataset.i);
+
+  // 매 프레임 324개 요소를 전부 훑으면 그 자체가 지연이 된다.
+  // 바뀐 칸만 손댄다.
+  const active = findSegment(t);
+  if (active !== state.activeSegment) {
+    (state.chipsBySegment[state.activeSegment] || []).forEach(c => {
+      c.classList.remove('on');
+      c.querySelector('.bar').style.width = '0';
+    });
+    state.activeSegment = active;
+    if (active >= 0 && active !== state.selected) selectChord(active);
+  }
+  const chips = state.chipsBySegment[active];
+  if (!chips) return;
+
+  const seg = state.segments[active];
+  const pct = Math.min(100, ((t - seg.start) / Math.max(seg.end - seg.start, .001)) * 100) + '%';
+  chips.forEach(c => {
+    c.classList.add('on');
+    c.querySelector('.bar').style.width = pct;
   });
+}
+
+/** 재생 위치가 속한 구간. 대개 직전 구간 근처라 거기서부터 찾는다. */
+function findSegment(t) {
+  const segs = state.segments;
+  let i = state.activeSegment >= 0 ? state.activeSegment : 0;
+  if (segs[i] && t >= segs[i].start && t < segs[i].end) return i;
+  while (i + 1 < segs.length && segs[i + 1].start <= t) i++;
+  while (i > 0 && segs[i].start > t) i--;
+  return segs[i] && t >= segs[i].start && t < segs[i].end ? i : -1;
 }
 
 function seek(i) {
   const seg = state.segments[i];
   if (!seg) return;
+  state.clock = null;          // 탐색 후에는 보간 기준점을 다시 잡아야 한다
   if (state.ytPlayer && state.ytPlayer.seekTo) state.ytPlayer.seekTo(seg.start, true);
   else if (!$('player').classList.contains('hidden')) $('player').currentTime = seg.start;
 }
