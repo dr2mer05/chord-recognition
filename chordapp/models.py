@@ -133,12 +133,18 @@ class AnalysisResult:
         if not self.segments:
             return []
 
-        boundaries = self._bar_boundaries()
+        boundaries, has_pickup = self._bar_boundaries()
         beats_per_bar = max(int(self.beats_per_bar), 1)
         flat = self.key.prefer_flat
         out: List[Dict[str, Any]] = []
 
-        for index, (bar_start, bar_end) in enumerate(zip(boundaries, boundaries[1:]), start=1):
+        # 못갖춘마디는 0번으로 센다. 음악에서 도입부 여린내기는 1마디가 아니다.
+        # 이걸 1마디로 세면 이후 마디 번호가 통째로 하나씩 밀려서, 사용자가
+        # 아는 "전주 5마디"와 화면이 안 맞는다.
+        first_number = 0 if has_pickup else 1
+        for index, (bar_start, bar_end) in enumerate(
+            zip(boundaries, boundaries[1:]), start=first_number
+        ):
             beat_len = (bar_end - bar_start) / beats_per_bar
             if beat_len <= 0:
                 continue
@@ -189,8 +195,8 @@ class AnalysisResult:
                 return i
         return None
 
-    def _bar_boundaries(self) -> List[float]:
-        """마디 경계 시각. 다운비트가 있으면 그걸 쓰고, 없으면 템포로 만든다."""
+    def _bar_boundaries(self) -> "tuple[List[float], bool]":
+        """마디 경계 시각과 못갖춘마디 여부."""
         end = max(self.duration, self.segments[-1].end if self.segments else 0.0)
         if len(self.downbeats) >= 2:
             bounds = list(self.downbeats)
@@ -198,7 +204,8 @@ class AnalysisResult:
             # 첫 다운비트 앞이 한 마디의 1/4을 넘으면 진짜 못갖춘마디로 보고 한 칸을 준다.
             # 그보다 짧으면 그냥 비트 검출 오차이므로 첫 마디를 0까지 당긴다
             # (안 그러면 23ms짜리 가짜 마디가 생긴다).
-            if bounds[0] > spacing * 0.25:
+            has_pickup = bounds[0] > spacing * 0.25
+            if has_pickup:
                 bounds.insert(0, 0.0)
             else:
                 bounds[0] = 0.0
@@ -206,11 +213,11 @@ class AnalysisResult:
                 bounds.append(bounds[-1] + spacing)
             if bounds[-1] < end:
                 bounds.append(end)
-            return bounds
+            return bounds, has_pickup
 
         bar_len = (60.0 / max(self.tempo, 1e-6)) * max(self.beats_per_bar, 1)
         count = max(int(np.ceil(end / bar_len)), 1) if bar_len > 0 else 1
-        return [i * bar_len for i in range(count + 1)]
+        return [i * bar_len for i in range(count + 1)], False
 
     def to_dict(self) -> Dict[str, Any]:
         flat = self.key.prefer_flat

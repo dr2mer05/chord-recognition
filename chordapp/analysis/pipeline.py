@@ -22,6 +22,7 @@ KEY_REFINE_RELATIVE_MARGIN = 25.0
 from .audio import _USE_DEFAULT_TRACKER, extract_features
 from .ensemble import (
     apply_bass_to_segments,
+    downbeat_phase_from_chords,
     merge_adjacent,
     segment_beats,
     smooth_short_runs,
@@ -70,6 +71,10 @@ def analyze_audio(
     )
     if feats.beat_source != "librosa":
         warnings.append(f"비트·다운비트를 {feats.beat_source}로 추적 (librosa보다 정확)")
+    # 사용자가 탭으로 격자를 확정했거나 마디 시작을 직접 민 경우에는
+    # 아래의 자동 위상 보정을 돌리지 않는다.
+    manual_downbeats = bool(tempo_override and beat_offset is not None) or bool(downbeat_offset)
+
     if tempo_override:
         warnings.append(f"템포를 {tempo_override:.0f} BPM으로 지정해 격자를 다시 맞춤")
     if beats_per_bar != 4:
@@ -137,6 +142,22 @@ def analyze_audio(
 
     predictions = [p for _, p in pairs]
     chords = smooth_short_runs(chords, min_beats=2)
+
+    # 마디 첫 박을 코드 변화 위치로 다시 정한다.
+    # 온셋 세기는 편곡에 따라 흔들리지만 화성 리듬은 곡 구조 그 자체라 훨씬 믿을 만하다.
+    # (실측: 기다리다에서 추적기가 고른 위상은 코드 전환을 하나도 설명하지 못했고,
+    #  한 박 옮기니 전환 9개 중 5개가 마디 첫 박에 떨어졌다.)
+    if not manual_downbeats:
+        current = int(np.atleast_1d(feats.downbeat_indices).min()) % max(beats_per_bar, 1)
+        phase = downbeat_phase_from_chords(chords, beats_per_bar, current)
+        if phase != current:
+            shift = (phase - current) % beats_per_bar
+            warnings.append(
+                f"마디 첫 박을 코드 변화 기준으로 {shift}박 이동 (위상 {current} → {phase})"
+            )
+            feats.downbeat_indices = np.arange(
+                phase, len(feats.beat_times), max(beats_per_bar, 1), dtype=int
+            )
 
     segments = segment_beats(
         chords, confidence, agreement, feats.beat_times, feats.duration,

@@ -417,5 +417,20 @@ def progression(req: ProgressionRequest) -> JSONResponse:
     return JSONResponse({"key": key.name(), "analysis": rows})
 
 
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+def index() -> FileResponse:
+    """프론트엔드. **캐시를 끈다.**
+
+    StaticFiles는 기본적으로 캐시를 허용하는데, 그러면 UI를 고쳐도 사용자
+    화면에는 예전 버전이 계속 뜬다. 실제로 코드 분리·마디 격자·재생 동기화를
+    다 고친 뒤에도 사용자에게는 옛 화면이 보여서 "여전히 안 된다"는 보고가 나왔다.
+    """
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
 if STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

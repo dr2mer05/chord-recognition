@@ -101,6 +101,38 @@ def apply_bass_to_segments(
     return segments
 
 
+def downbeat_phase_from_chords(
+    chords: Sequence[Chord],
+    beats_per_bar: int,
+    current_phase: int,
+    margin: float = 1.35,
+) -> int:
+    """코드 변화 위치로 마디 첫 박을 정한다.
+
+    이게 다운비트의 가장 강력한 단서다. 코드는 마디 첫 박에서 압도적으로 자주
+    바뀌기 때문이다. 온셋 세기(킥/스네어)는 편곡에 따라 흔들리지만 화성 리듬은
+    곡 구조 그 자체다.
+
+    실측 근거: 윤하 <기다리다> 전주의 정답 코드 전환 위치를 4로 나눈 나머지는
+    0번 위상 5회, 2번 3회, 3번 1회였다. beat_this가 고른 위상은 0회였다
+    (한 박 늦게 잡았고, 그래서 마디가 통째로 어긋났다).
+
+    확실하지 않으면 원래 위상을 유지한다 — 조용한 구간이나 화성 리듬이 느린
+    곡에서는 표본이 부족하다.
+    """
+    bpb = max(int(beats_per_bar), 1)
+    changes = [i for i in range(1, len(chords)) if chords[i] != chords[i - 1]]
+    if len(changes) < 4 or bpb < 2:
+        return current_phase
+
+    counts = np.bincount([c % bpb for c in changes], minlength=bpb).astype(float)
+    best = int(counts.argmax())
+    rest = (counts.sum() - counts[best]) / (bpb - 1)
+    if rest <= 0 or counts[best] >= rest * margin:
+        return best
+    return current_phase
+
+
 def smooth_short_runs(chords: List[Chord], min_beats: int = 2) -> List[Chord]:
     """1비트짜리 튐 제거. 앞뒤가 같으면 그 코드로 흡수한다."""
     if len(chords) < 3:
