@@ -495,13 +495,15 @@ function renderChart(rows, segments, bars) {
       }
       const seg = segments ? segments[s.index] : null;
       const title = seg ? `확신도 ${Math.min(seg.confidence, seg.agreement).toFixed(2)} · ${fmtTime(seg.start)}` : '';
+      // 칸마다 자기 시간 범위를 들고 있어야 이 박에서 코드를 갈라낼 수 있다
+      const span = `data-i="${s.index}" data-start="${s.start}" data-end="${s.segment_end}"`;
       if (s.chord === null) {   // 앞 박에서 이어지는 칸
-        return `<div class="chip cont" data-i="${s.index}" title="${esc(title)}">
+        return `<div class="chip cont" ${span} title="${esc(title)} · 클릭하면 이 박부터 코드를 나눌 수 있다">
           <div class="name">/</div><div class="bar"></div></div>`;
       }
       const grade = s.grade && s.grade !== 'high' ? ' ' + s.grade : '';
       const held = s.held ? ' held' : '';
-      return `<div class="chip${grade}${held}" data-i="${s.index}" title="${esc(title)}">
+      return `<div class="chip${grade}${held}" ${span} title="${esc(title)}">
         <div class="name">${esc(s.chord)}</div>
         <div class="roman">${esc(s.roman || '')}</div>
         <div class="bar"></div></div>`;
@@ -517,7 +519,9 @@ function renderChart(rows, segments, bars) {
       const i = +chip.dataset.i;
       seek(i);
       selectChord(i);
-      startEdit(chip, i);      // 클릭한 칸이 그대로 입력창이 된다
+      // 클릭한 칸이 그대로 입력창이 된다. 칸의 시간 범위를 함께 넘겨서
+      // 마디 중간 박에서도 코드를 갈라낼 수 있게 한다.
+      startEdit(chip, i, +chip.dataset.start, +chip.dataset.end);
     };
   });
   if (rows.length) selectChord(0);
@@ -550,7 +554,7 @@ function selectChord(i) {
 /* ---------- 코드 교정 (제자리 수정) ---------- */
 
 /** 클릭한 칸을 입력창으로 바꾼다. Enter 저장, Esc 취소. */
-function startEdit(chip, index) {
+function startEdit(chip, index, slotStart, slotEnd) {
   if (!state.sourceKey) return;                 // 직접 입력 진행에는 원본이 없다
   const nameEl = chip.querySelector('.name');
   if (!nameEl || nameEl.querySelector('input')) return;
@@ -558,6 +562,12 @@ function startEdit(chip, index) {
   const seg = state.segments[index];
   const row = state.rows[index];
   if (!seg || !row) return;
+
+  // 이 박부터 원래 코드가 끝나던 데까지가 교정 범위.
+  // 마디 첫 박이면 구간 전체, 중간 박이면 거기서 갈라진다.
+  const from = slotStart === undefined || isNaN(slotStart) ? seg.start : slotStart;
+  const to = slotEnd === undefined || isNaN(slotEnd) ? seg.end : slotEnd;
+  const splitting = from > seg.start + 1e-3;
 
   const restore = nameEl.innerHTML;
   nameEl.innerHTML = '<input class="inline" spellcheck="false">';
@@ -581,14 +591,16 @@ function startEdit(chip, index) {
     if (e.key !== 'Enter') return;
 
     const chord = input.value.trim();
-    if (!chord || chord === row.chord) { cancel(); return; }
+    if (!chord || (chord === row.chord && !splitting)) { cancel(); return; }
     input.disabled = true;
     try {
       await postJSON('/api/corrections', {
-        source_key: state.sourceKey, start: seg.start, end: seg.end,
+        source_key: state.sourceKey, start: from, end: to,
         chord, original: row.chord,
       });
-      setText('fixStatus', `${row.chord} → ${chord} 저장됨`);
+      setText('fixStatus', splitting
+        ? `${fmtTime(from)}부터 ${chord}로 분리됨`
+        : `${row.chord} → ${chord} 저장됨`);
       await reloadAnalysis();
     } catch (err) {
       input.disabled = false;

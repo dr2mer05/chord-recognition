@@ -13,6 +13,11 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..theory.key import KK_MAJOR, KK_MINOR, Key
+from .beat_tracker import BeatTracker, default_tracker
+
+# extract_features의 tracker 인자 기본값. None은 "librosa만 써라"라는 뜻이라
+# "설정된 걸 알아서 골라라"와 구분해야 해서 별도 센티널을 둔다.
+_USE_DEFAULT_TRACKER = object()
 
 SR = 22050
 HOP = 512
@@ -48,6 +53,7 @@ class AudioFeatures:
     bass_chroma: np.ndarray  # (12, n_beats) 저역 크로마 (전위/슬래시 판별용)
     key: Key
     key_confidence: float
+    beat_source: str = "librosa"   # 어느 추적기가 격자를 만들었는지
     # 소스 분리를 썼을 때만 채워진다. 원본 믹스 기준 크로마로, 분리본과
     # 서로 다른 오류 편향을 갖기 때문에 앙상블의 두 번째 의견으로 쓴다.
     beat_chroma_alt: Optional[np.ndarray] = None
@@ -75,6 +81,7 @@ def extract_features(
     tempo_override: Optional[float] = None,
     downbeat_offset: int = 0,
     beat_offset: Optional[float] = None,
+    tracker: Optional["BeatTracker"] = _USE_DEFAULT_TRACKER,
 ) -> AudioFeatures:
     """`harmonic_paths`/`bass_path`를 주면 그 스템으로 크로마를 만든다.
 
@@ -90,15 +97,34 @@ def extract_features(
 
     y, sr = load_audio(path, sr=sr, max_seconds=max_seconds)
 
+    if tracker is _USE_DEFAULT_TRACKER:
+        tracker = default_tracker()
+
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
     manual_grid = bool(tempo_override and beat_offset is not None)
-    tempo, beat_frames = _beat_track(
-        onset_env, sr, tempo_override, beat_offset, duration=len(y) / sr
-    )
-    tempo = float(np.atleast_1d(tempo)[0])
-    beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP)
-    if not manual_grid:
-        beat_times = _ensure_beat_grid(beat_times, tempo, len(y) / sr)
+
+    # 더 나은 추적기(beat_this)가 있으면 그걸 쓴다. 사용자가 템포를 지정했거나
+    # 설치돼 있지 않으면 librosa로 간다.
+    grid = None
+    if not tempo_override and tracker is not None:
+        try:
+            grid = tracker.track(path)
+        except Exception:
+            grid = None
+
+    if grid is not None:
+        beat_times = np.asarray(grid.beat_times, dtype=float)
+        tempo = grid.tempo
+        if grid.beats_per_bar:
+            beats_per_bar = grid.beats_per_bar
+    else:
+        tempo, beat_frames = _beat_track(
+            onset_env, sr, tempo_override, beat_offset, duration=len(y) / sr
+        )
+        tempo = float(np.atleast_1d(tempo)[0])
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP)
+        if not manual_grid:
+            beat_times = _ensure_beat_grid(beat_times, tempo, len(y) / sr)
     beat_frames_grid = librosa.time_to_frames(beat_times, sr=sr, hop_length=HOP)
 
     def harmonic_chroma(signal: np.ndarray) -> np.ndarray:
@@ -150,6 +176,12 @@ def extract_features(
         first = int(round((float(beat_offset) - float(beat_times[0])) / period))
         phase = (first + downbeat_offset) % max(beats_per_bar, 1)
         downbeats = np.arange(phase, len(beat_times), max(beats_per_bar, 1), dtype=int)
+    elif grid is not None and grid.downbeat_times is not None:
+        # 추적기가 다운비트를 직접 준다. 온셋 세기로 위상을 추측하던 자체
+        # 휴리스틱보다 이쪽이 훨씬 낫다.
+        downbeats = grid.downbeat_indices(beats_per_bar=beats_per_bar)
+        if downbeat_offset:
+            downbeats = np.clip(downbeats + downbeat_offset, 0, len(beat_times) - 1)
     else:
         downbeats = estimate_downbeats(
             y, sr, beat_times, beats_per_bar, onset_env=onset_env,
@@ -173,6 +205,7 @@ def extract_features(
         key_confidence=conf,
         beat_chroma_alt=beat_chroma_alt,
         separated=separated,
+        beat_source=grid.source if grid is not None else "librosa",
     )
 
 
@@ -279,13 +312,21 @@ def _beat_track(
 #
 # 진짜 원인은 librosa의 템포 사전확률이 120 BPM 중심이라는 것이었다.
 # 69 BPM 발라드는 138 쪽이 사전확률상 유리해서 배음으로 끌려간다.
-# 사전확률을 90으로 낮추면 실측에서:
-#   윤하 기다리다 136 → 69.8 (정답 69)
-#   아이유 밤편지 152 → 80.7 (정답 74, 옥타브 오류는 해소)
-#   합성 데모 5곡은 전부 변화 없음
+# 사전확률을 90으로 낮추면 느린 곡은 고쳐지는데, 빠른 곡이 대신 깨진다.
+# beat_this를 기준으로 실측한 결과(5곡):
 #
-# 다만 합성 벤치마크가 이 값을 검증해주지 못하고(모든 사전확률에서 동일),
-# 빠른 곡을 절반으로 잡을 위험이 남는다. 그래서 곡별 수동 지정을 함께 둔다.
+#   곡                 정답    prior 120   prior 90
+#   윤하 기다리다        69.8    136 ✗       69.8 ✓
+#   아이유 밤편지        78.9    152 ✗       80.7 ✓
+#   다시 여기 바닷가     130.4    129 ✓       89.1 ✗
+#   실제곡4            136.4    136 ✓       89.1 ✗
+#   실제곡5            111.1    112 ✓       112  ✓
+#                            ---------   --------
+#                              3/5         3/5
+#
+# **고정 사전확률로는 해결되지 않는다.** 어느 쪽으로 옮겨도 손익이 상쇄된다.
+# 90으로 두는 건 발라드를 우선한 선택일 뿐이고, 진짜 해결은 beat_this
+# (beat_tracker.py)다 — 위 5곡의 템포를 모두 맞힌다. 그게 없을 때의 폴백 값.
 TEMPO_PRIOR_BPM = 90.0
 
 

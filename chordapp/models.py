@@ -165,6 +165,12 @@ class AnalysisResult:
                     "grade": seg.grade,
                     # 이 마디보다 앞에서 시작한 코드인지
                     "held": is_new and seg.start < bar_start - 1e-6,
+                    # 이 칸 자체의 시간 범위. 칸 단위로 코드를 고칠 때 쓴다 —
+                    # 한 코드로 묶인 구간을 이 박에서 갈라낼 수 있어야 한다.
+                    "start": round(bar_start + beat * beat_len, 3),
+                    "end": round(bar_start + (beat + 1) * beat_len, 3),
+                    # 이 칸에 새 코드를 넣으면 원래 코드가 끝나던 데까지 적용된다
+                    "segment_end": round(seg.end, 3),
                 })
 
             if any(slot["index"] is not None for slot in slots):

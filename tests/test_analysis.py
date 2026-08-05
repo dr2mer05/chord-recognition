@@ -151,6 +151,24 @@ def test_bar_slots_show_where_a_chord_lands():
     slots = result.bars()[0]["slots"]
     assert [s["chord"] for s in slots] == ["C", None, "Am", None]
 
+    # 칸마다 자기 시간 범위를 들고 있어야 그 박에서 코드를 갈라낼 수 있다
+    assert [s["start"] for s in slots] == [0.0, 1.0, 2.0, 3.0]
+    assert [s["end"] for s in slots] == [1.0, 2.0, 3.0, 4.0]
+    # 새 코드를 넣으면 원래 코드가 끝나던 데까지 적용된다
+    assert [s["segment_end"] for s in slots] == [2.0, 2.0, 4.0, 4.0]
+
+
+def test_editing_a_middle_slot_splits_the_segment():
+    """한 코드로 묶인 구간을 중간 박에서 갈라낼 수 있어야 한다."""
+    from chordapp.service.corrections import Correction, apply_corrections
+
+    segments = [ChordSegment(0.0, 4.0, Chord.parse("Am"), 1.0, 1.0)]
+    # 3박(2.0초)째 칸에 F를 넣으면 거기서부터 구간 끝까지 F
+    split = apply_corrections(segments, [Correction(2.0, 4.0, "F")])
+    assert [(s.start, s.end, s.chord.name()) for s in split] == [
+        (0.0, 2.0, "Am"), (2.0, 4.0, "F"),
+    ]
+
 
 # --- 평가 코드 자체 ---------------------------------------------------
 

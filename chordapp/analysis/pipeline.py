@@ -19,7 +19,7 @@ KEY_REFINE_MARGIN = 5.0
 # 뒤집혔다. 이 쌍만 문턱을 크게 높여 오디오 쪽 판단을 존중한다.
 # (제대로 된 해결은 M2에서 구간 길이 가중 + 프레이즈 시작/끝 분석.)
 KEY_REFINE_RELATIVE_MARGIN = 25.0
-from .audio import extract_features
+from .audio import _USE_DEFAULT_TRACKER, extract_features
 from .ensemble import (
     apply_bass_to_segments,
     merge_adjacent,
@@ -45,6 +45,7 @@ def analyze_audio(
     tempo_override: Optional[float] = None,
     downbeat_offset: int = 0,
     beat_offset: Optional[float] = None,
+    tracker: object = _USE_DEFAULT_TRACKER,
 ) -> AnalysisResult:
     warnings: List[str] = []
 
@@ -65,7 +66,10 @@ def analyze_audio(
         tempo_override=tempo_override,
         downbeat_offset=downbeat_offset,
         beat_offset=beat_offset,
+        tracker=tracker,
     )
+    if feats.beat_source != "librosa":
+        warnings.append(f"비트·다운비트를 {feats.beat_source}로 추적 (librosa보다 정확)")
     if tempo_override:
         warnings.append(f"템포를 {tempo_override:.0f} BPM으로 지정해 격자를 다시 맞춤")
     if beats_per_bar != 4:
