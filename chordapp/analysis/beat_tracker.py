@@ -99,27 +99,72 @@ class BeatThisTracker:
             raise RuntimeError("beat_this가 비트를 찾지 못했다")
 
         tempo = float(60.0 / np.median(np.diff(beats)))
+        regular, meter = regularize_downbeats(beats, downbeats)
         return BeatGrid(
             beat_times=beats,
             tempo=tempo,
-            downbeat_times=downbeats if downbeats.size else None,
-            beats_per_bar=_infer_meter(beats, downbeats),
+            downbeat_times=regular if regular is not None
+            else (downbeats if downbeats.size else None),
+            beats_per_bar=meter,
             source=self.name,
         )
 
 
-def _infer_meter(beats: np.ndarray, downbeats: np.ndarray) -> Optional[int]:
-    """다운비트 사이에 비트가 몇 개인지 세서 박자표를 얻는다."""
-    if downbeats.size < 3:
-        return None
-    counts = [
-        int(np.sum((beats >= downbeats[i]) & (beats < downbeats[i + 1])))
-        for i in range(len(downbeats) - 1)
-    ]
-    counts = [c for c in counts if 2 <= c <= 12]
-    if len(counts) < 2:
-        return None
-    return int(np.bincount(counts).argmax())
+# 박자 후보. 2박은 뺐다 — 대중음악에서 2/4는 거의 없는 데다,
+# **4의 약수라서 구조적으로 유리하다.** 4/4 곡의 다운비트는 정의상 2박 격자에도
+# 전부 들어맞기 때문에, 잡음이 조금만 끼면 항상 2박이 이긴다.
+# (실측: 4/4 발라드의 2박 점수 0.478 vs 4박 0.232 — 도입부의 불규칙한
+#  다운비트 몇 개 때문에 뒤집혔다.)
+DEFAULT_METER = 4
+_ALT_METERS = (3, 6)
+
+# 4/4가 아니라고 판단하려면 이만큼 확실해야 한다. 대중음악은 4/4가 압도적이라
+# 어중간한 증거로 3박·6박으로 넘어가면 손해가 더 크다.
+_ALT_METER_MARGIN = 1.6
+
+
+def regularize_downbeats(
+    beats: np.ndarray, downbeats: np.ndarray
+) -> Tuple[Optional[np.ndarray], Optional[int]]:
+    """모델이 낸 다운비트를 일정한 주기로 정리한다.
+
+    beat_this는 다운비트를 프레임 단위로 독립 판정해서 결과가 들쭉날쭉하다.
+    실측에서 느린 발라드의 마디 길이 변동이 27.7%, 4박 일관성이 85%였다
+    (빠른 곡은 8~9%, 94~96%로 괜찮다). 원래는 DBN 후처리가 이걸 잡아주는데
+    그건 madmom을 요구해서 윈도우에서 쓸 수 없다.
+
+    그래서 직접 편다: (박자, 위상) 조합 중 모델의 다운비트를 가장 많이 설명하는
+    것을 고르고, 그 주기로 균등하게 다시 깐다. 모델의 판단을 버리는 게 아니라
+    "몇 박마다"라는 제약을 씌우는 것이다.
+    """
+    if beats.size < 8 or downbeats.size < 3:
+        return None, None
+
+    # 각 다운비트가 몇 번째 비트인지
+    idx = np.array([int(np.argmin(np.abs(beats - t))) for t in downbeats])
+    idx = np.unique(idx)
+
+    def evaluate(meter: int) -> Tuple[float, int]:
+        """이 박자로 봤을 때 최선의 위상과 점수(우연 초과분)."""
+        chance = 1.0 / meter
+        best_phase, best_rate = 0, -1.0
+        for phase in range(meter):
+            rate = float(np.sum((idx % meter) == phase)) / len(idx)
+            if rate > best_rate:
+                best_phase, best_rate = phase, rate
+        return (best_rate - chance) / (1.0 - chance), best_phase
+
+    base_score, base_phase = evaluate(DEFAULT_METER)
+    meter, phase, score = DEFAULT_METER, base_phase, base_score
+
+    # 4/4에서 벗어나려면 뚜렷하게 나아야 한다
+    for candidate in _ALT_METERS:
+        alt_score, alt_phase = evaluate(candidate)
+        if alt_score > max(base_score, 0.05) * _ALT_METER_MARGIN and alt_score > score:
+            meter, phase, score = candidate, alt_phase, alt_score
+
+    regular = np.arange(phase, len(beats), meter, dtype=int)
+    return beats[regular], meter
 
 
 def default_tracker() -> Optional[BeatTracker]:

@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+*.egg-info/
 
 # 생성물 — 저작권 있는 음원이 실수로 커밋되는 걸 막는다
 data/
