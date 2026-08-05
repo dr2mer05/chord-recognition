@@ -9,6 +9,7 @@ import copy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from ..analysis.constants import ANALYSIS_VERSION
 from ..models import AnalysisResult
 from ..theory.key import Key
 from ..theory.stats import DEFAULT_PRIOR, TransitionPrior
@@ -118,6 +119,8 @@ class ChordService:
             # 사용자가 템포를 지정하면 격자가 통째로 달라진다
             "tempo": tempo_override,
             "meter": (beats_per_bar, downbeat_offset, beat_offset),
+            # 분석 로직이 바뀌면 옛 결과를 그대로 쓰면 안 된다
+            "algo": ANALYSIS_VERSION,
         }
         cache_key = self.cache.make_key(NAMESPACE_YOUTUBE, video_id, **options)
 
@@ -219,6 +222,8 @@ class ChordService:
             # 템포·박자를 지정하면 격자가 통째로 달라진다
             "tempo": tempo_override,
             "meter": (beats_per_bar, downbeat_offset, beat_offset),
+            # 분석 로직이 바뀌면 옛 결과를 그대로 쓰면 안 된다
+            "algo": ANALYSIS_VERSION,
         }
         cache_key = self.cache.make_key(NAMESPACE_AUDIO, fingerprint, **options)
 

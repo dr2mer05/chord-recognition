@@ -19,6 +19,8 @@ KEY_REFINE_MARGIN = 5.0
 # 뒤집혔다. 이 쌍만 문턱을 크게 높여 오디오 쪽 판단을 존중한다.
 # (제대로 된 해결은 M2에서 구간 길이 가중 + 프레이즈 시작/끝 분석.)
 KEY_REFINE_RELATIVE_MARGIN = 25.0
+
+from .constants import ANALYSIS_VERSION  # noqa: F401  (캐시 키용, 여기서 재노출)
 from .audio import _USE_DEFAULT_TRACKER, extract_features
 from .ensemble import (
     apply_bass_to_segments,
