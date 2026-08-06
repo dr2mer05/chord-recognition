@@ -98,6 +98,8 @@ class BeatThisTracker:
         if beats.size < 2:
             raise RuntimeError("beat_this가 비트를 찾지 못했다")
 
+        # 가짜 비트 하나가 이후 박 번호를 통째로 밀어버리므로 먼저 정리한다
+        beats = sanitize_beats(beats)
         tempo = float(60.0 / np.median(np.diff(beats)))
         regular, meter = regularize_downbeats(beats, downbeats)
         return BeatGrid(
@@ -121,6 +123,47 @@ _ALT_METERS = (3, 6)
 # 4/4가 아니라고 판단하려면 이만큼 확실해야 한다. 대중음악은 4/4가 압도적이라
 # 어중간한 증거로 3박·6박으로 넘어가면 손해가 더 크다.
 _ALT_METER_MARGIN = 1.6
+
+
+def sanitize_beats(
+    beats: np.ndarray, drop_below: float = 0.6, fill_above: float = 1.6
+) -> np.ndarray:
+    """비트 목록에서 가짜 비트를 버리고 빠진 비트를 채운다.
+
+    beat_this는 프레임 단위로 비트를 독립 판정해서 목록이 깨끗하지 않다. 실측:
+
+      윤하 기다리다   342비트 중 69개(20%)가 중앙 간격의 60% 미만
+      다시 여기 바닷가 521비트 중 12개
+      아이유 밤편지   짧은 것 3개 + 긴 것 6개(비트를 놓친 구간)
+
+    이게 치명적인 이유는 **개수가 밀리기 때문**이다. 기다리다에서는 0.12초짜리
+    가짜 비트 하나 때문에 이후 모든 박 번호가 하나씩 밀렸고, 그래서 마디 첫 박이
+    한 박 늦게 잡히고 없는 못갖춘마디가 생겼다.
+
+    두 종류를 다룬다.
+      - 간격이 너무 짧으면(중앙값의 60% 미만) 뒤 비트를 버린다. 배속으로 튄
+        구간(간격이 절반)도 이 규칙으로 한 박씩 걸러진다.
+      - 간격이 너무 길면(160% 초과) 그 사이를 균등하게 채운다.
+    """
+    beats = np.asarray(beats, dtype=float)
+    if beats.size < 4:
+        return beats
+
+    period = float(np.median(np.diff(beats)))
+    if period <= 0:
+        return beats
+
+    out: List[float] = [float(beats[0])]
+    for t in beats[1:]:
+        gap = float(t) - out[-1]
+        if gap < period * drop_below:
+            continue                                  # 가짜 비트
+        if gap > period * fill_above:                 # 놓친 비트를 채운다
+            missing = max(int(round(gap / period)) - 1, 0)
+            base, step = out[-1], gap / (missing + 1)
+            out.extend(base + step * k for k in range(1, missing + 1))
+        out.append(float(t))
+    return np.asarray(out)
 
 
 def regularize_downbeats(

@@ -285,6 +285,63 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_beateval(args: argparse.Namespace) -> int:
+    """비트·다운비트 추적을 여러 곡으로 평가한다.
+
+    한 곡을 보고 고치면 과적합된다. 템포 62~160, 3/4·4/4·6/8, 화성 리듬이
+    빠른 곡과 느린 곡을 고루 넣은 세트에서 재야 변경이 일반화되는지 알 수 있다.
+    """
+    import numpy as np
+
+    from .analysis.audio import extract_features
+    from .evaluation import BEAT_TOLERANCE, beat_f_measure, tempo_error
+    from .tools.synth import BEAT_EVAL_TRACKS, beat_grid, render_track, write_wav
+
+    out_dir = Path(args.dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for i, track in enumerate(BEAT_EVAL_TRACKS):
+        wav = out_dir / f"{track.name}.wav"
+        if not wav.exists() or args.regenerate:
+            audio, _ = render_track(track, seed=i)
+            write_wav(wav, audio)
+
+        beats_true, downs_true = beat_grid(track)
+        feats = extract_features(str(wav), beats_per_bar=track.beats_per_bar)
+        beats_est = list(feats.beat_times)
+        downs_est = [feats.beat_times[j] for j in np.atleast_1d(feats.downbeat_indices)
+                     if j < len(feats.beat_times)]
+
+        beat = beat_f_measure(beats_true, beats_est, BEAT_TOLERANCE)
+        down = beat_f_measure(downs_true, downs_est, BEAT_TOLERANCE)
+        tempo = tempo_error(track.bpm, feats.tempo)
+        rows.append((track, beat, down, tempo, feats))
+
+    print(f"\n비트 추적 평가 — {len(rows)}곡 (±{BEAT_TOLERANCE * 1000:.0f}ms 허용)\n")
+    print(f"  {'곡':<20}{'정답':>6}{'검출':>8}  {'비트F':>6}{'마디F':>6}  비고")
+    print("  " + "─" * 62)
+    for track, beat, down, tempo, feats in rows:
+        note = []
+        if tempo["octave"]:
+            note.append(f"템포 {tempo['ratio']:.2f}배")
+        elif tempo["percent"] > 3:
+            note.append(f"템포 {tempo['percent']:.0f}%")
+        if feats.beats_per_bar != track.beats_per_bar:
+            note.append(f"{feats.beats_per_bar}박 오인")
+        print(f"  {track.name:<20}{track.bpm:>6.0f}{feats.tempo:>8.1f}  "
+              f"{beat['f'] * 100:>5.0f}%{down['f'] * 100:>5.0f}%  {' '.join(note)}")
+
+    mean = lambda key, idx: sum(r[idx][key] for r in rows) / len(rows)
+    octaves = sum(1 for r in rows if r[3]["octave"])
+    meters = sum(1 for r in rows if r[4].beats_per_bar != r[0].beats_per_bar)
+    print("  " + "─" * 62)
+    print(f"  {'전체':<20}{'':>6}{'':>8}  {mean('f', 1) * 100:>5.0f}%{mean('f', 2) * 100:>5.0f}%")
+    print(f"\n  템포 배수 오류 {octaves}/{len(rows)} · 박자 오인 {meters}/{len(rows)}")
+    print(f"  추적기: {rows[0][4].beat_source}\n")
+    return 0
+
+
 def cmd_corrections(args: argparse.Namespace) -> int:
     """교정 현황. 검수 완료한 곡이 곧 실제 녹음 기준 정답 데이터다."""
     from .service.corrections import CorrectionStore
@@ -430,6 +487,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--separate", dest="separate", action="store_true", default=False,
                    help="소스 분리를 켜고 측정 (합성 음원에서는 오히려 나빠진다)")
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("beateval", help="비트·다운비트 추적 평가 (여러 곡)")
+    p.add_argument("--dir", default="data/beateval")
+    p.add_argument("--regenerate", action="store_true", help="음원을 다시 생성")
+    p.set_defaults(func=cmd_beateval)
 
     p = sub.add_parser("corrections", help="사용자 교정 현황")
     p.add_argument("--db", default="data/corrections.sqlite3")

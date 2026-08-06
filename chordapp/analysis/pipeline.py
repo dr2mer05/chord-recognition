@@ -24,7 +24,6 @@ from .constants import ANALYSIS_VERSION  # noqa: F401  (캐시 키용, 여기서
 from .audio import _USE_DEFAULT_TRACKER, extract_features
 from .ensemble import (
     apply_bass_to_segments,
-    downbeat_phase_from_chords,
     merge_adjacent,
     segment_beats,
     smooth_short_runs,
@@ -145,21 +144,15 @@ def analyze_audio(
     predictions = [p for _, p in pairs]
     chords = smooth_short_runs(chords, min_beats=2)
 
-    # 마디 첫 박을 코드 변화 위치로 다시 정한다.
-    # 온셋 세기는 편곡에 따라 흔들리지만 화성 리듬은 곡 구조 그 자체라 훨씬 믿을 만하다.
-    # (실측: 기다리다에서 추적기가 고른 위상은 코드 전환을 하나도 설명하지 못했고,
-    #  한 박 옮기니 전환 9개 중 5개가 마디 첫 박에 떨어졌다.)
-    if not manual_downbeats:
-        current = int(np.atleast_1d(feats.downbeat_indices).min()) % max(beats_per_bar, 1)
-        phase = downbeat_phase_from_chords(chords, beats_per_bar, current)
-        if phase != current:
-            shift = (phase - current) % beats_per_bar
-            warnings.append(
-                f"마디 첫 박을 코드 변화 기준으로 {shift}박 이동 (위상 {current} → {phase})"
-            )
-            feats.downbeat_indices = np.arange(
-                phase, len(feats.beat_times), max(beats_per_bar, 1), dtype=int
-            )
+    # 코드 변화로 마디 첫 박을 다시 정하는 보정을 넣었다가 뺐다.
+    #
+    # 화성 리듬이 다운비트의 좋은 단서인 건 맞지만, 그건 **코드 인식이 맞을 때**
+    # 얘기다. 코드가 틀리면 그 오류가 마디 구조로 전파된다. 실제로 기다리다에서
+    # 이 보정이 추적기가 제대로 잡은 마디를 두 박 밀어 없는 못갖춘마디를 만들었다.
+    # 16곡 평가에서도 다운비트 F를 전혀 개선하지 못했다.
+    #
+    # 추론의 방향이 잘못됐다 — 비트가 코드 인식의 입력이므로, 코드 인식 결과를
+    # 다시 비트로 되먹이면 오류가 순환한다.
 
     segments = segment_beats(
         chords, confidence, agreement, feats.beat_times, feats.duration,

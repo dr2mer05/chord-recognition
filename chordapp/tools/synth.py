@@ -35,6 +35,50 @@ class DemoTrack:
         return self.chord_beats or self.beats_per_bar
 
 
+def beat_grid(track: DemoTrack) -> "tuple[List[float], List[float]]":
+    """이 트랙의 정답 비트·다운비트 시각.
+
+    합성기가 만든 것이므로 오차가 없다. 비트 추적 알고리즘을 평가할 때
+    이게 정답 라벨이 된다.
+    """
+    beat_dur = 60.0 / track.bpm
+    total = track.beats_per_chord * len(track.chords) * track.repeats
+    beats = [i * beat_dur for i in range(total)]
+    downbeats = beats[:: track.beats_per_bar]
+    return beats, downbeats
+
+
+# 비트 추적 평가용 세트. 한 곡에 맞춰 튜닝하는 걸 막으려면 템포·박자·화성 리듬이
+# 고루 퍼진 여러 곡에서 재야 한다. 실제 대중음악의 범위를 덮도록 구성했다.
+BEAT_EVAL_TRACKS: List[DemoTrack] = [
+    # 느린 발라드 (배음으로 끌려가기 쉬운 구간)
+    DemoTrack("bpm062_4_4", "C", 62, 4, ["C", "Am", "F", "G"], repeats=4),
+    DemoTrack("bpm070_4_4", "G", 70, 4, ["G", "Em", "C", "D"], repeats=4),
+    DemoTrack("bpm078_4_4", "F", 78, 4, ["Fmaj7", "Dm7", "Gm7", "C7"], repeats=4),
+    # 중간 템포
+    DemoTrack("bpm092_4_4", "D", 92, 4, ["D", "Bm", "G", "A"], repeats=4),
+    DemoTrack("bpm104_4_4", "A", 104, 4, ["A", "F#m", "D", "E"], repeats=4),
+    DemoTrack("bpm118_4_4", "Eb", 118, 4, ["Eb", "Cm", "Ab", "Bb"], repeats=4),
+    # 빠른 곡 (절반으로 잡히기 쉬운 구간)
+    DemoTrack("bpm132_4_4", "Bb", 132, 4, ["Bb", "Gm", "Eb", "F"], repeats=5),
+    DemoTrack("bpm146_4_4", "E", 146, 4, ["E", "C#m", "A", "B"], repeats=5),
+    DemoTrack("bpm160_4_4", "C", 160, 4, ["C", "G", "Am", "F"], repeats=6),
+    # 3박자 (왈츠)
+    DemoTrack("bpm096_3_4", "C", 96, 3, ["C", "F", "G"], repeats=6),
+    DemoTrack("bpm138_3_4", "Am", 138, 3, ["Am", "Dm", "E"], repeats=6),
+    # 6박자
+    DemoTrack("bpm084_6_8", "D", 84, 6, ["D", "G", "A", "D"], repeats=4),
+    # 화성 리듬이 빠른 경우 (반 마디마다 전환)
+    DemoTrack("fast_harmony_88", "C", 88, 4, ["C", "Am", "F", "G", "Em", "Am", "Dm", "G"],
+              repeats=3, chord_beats=2),
+    DemoTrack("fast_harmony_124", "G", 124, 4, ["G", "D", "Em", "C", "G", "Bm", "Am", "D"],
+              repeats=3, chord_beats=2),
+    # 코드가 두 마디씩 지속 (화성 리듬이 느린 경우)
+    DemoTrack("slow_harmony_76", "F", 76, 4, ["F", "Dm", "Bb", "C"], repeats=3, chord_beats=8),
+    DemoTrack("slow_harmony_128", "A", 128, 4, ["A", "E", "F#m", "D"], repeats=4, chord_beats=8),
+]
+
+
 DEMO_TRACKS: List[DemoTrack] = [
     DemoTrack("pop_I_V_vi_IV", "C", 96, 4, ["C", "G", "Am", "F"], repeats=3),
     DemoTrack("ballad_sevenths", "F", 76, 4, ["Fmaj7", "Dm7", "Gm7", "C7"], repeats=3),
@@ -136,7 +180,16 @@ def render_track(track: DemoTrack, sr: int = SR, seed: int = 0) -> Tuple[np.ndar
         for beat in range(track.beats_per_chord):
             t0 = start + beat * beat_dur
             idx = int(t0 * sr)
+            # 마디 첫 박을 음향적으로 구별 가능하게 만든다.
+            #
+            # 예전에는 "코드가 시작하는 박"만 세게 쳤는데, 코드가 반 마디마다
+            # 바뀌는 곡에서는 1박과 3박이 완전히 똑같아져서 다운비트를 알아낼
+            # 단서가 음원에 아예 없었다. 그 상태로 평가하면 어떤 알고리즘도
+            # 맞힐 수 없고, 거기 맞춰 튜닝하면 잘못된 픽스처에 과적합된다.
+            beat_in_bar = int(round((t0 / beat_dur))) % track.beats_per_bar
             amp_scale = 1.0 if beat == 0 else 0.75
+            if beat_in_bar == 0:
+                amp_scale *= 1.25          # 마디 첫 박 강세
             # 코드가 바뀐 뒤까지 길게 끌면 인식기가 아니라 음원이 틀린 게 된다.
             # 코드 끝 + 짧은 여운까지만 울리게 자른다.
             remaining = chord_dur - beat * beat_dur + 0.18

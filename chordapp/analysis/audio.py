@@ -325,9 +325,12 @@ def _beat_track(
 #                              3/5         3/5
 #
 # **고정 사전확률로는 해결되지 않는다.** 어느 쪽으로 옮겨도 손익이 상쇄된다.
-# 90으로 두는 건 발라드를 우선한 선택일 뿐이고, 진짜 해결은 beat_this
-# (beat_tracker.py)다 — 위 5곡의 템포를 모두 맞힌다. 그게 없을 때의 폴백 값.
-TEMPO_PRIOR_BPM = 90.0
+#
+# 한때 90으로 낮췄다가 librosa 기본값으로 되돌렸다. 발라드를 고치는 대신 빠른
+# 곡을 깨뜨리는 맞바꿈이었을 뿐이고(3/5 대 3/5), 두 곡을 보고 정한 값이라
+# 일반화 근거가 없었다. 진짜 해결은 beat_this(beat_tracker.py)이고 —
+# 16곡 평가에서 템포 배수 오류 0건 — 이 값은 그게 없을 때의 폴백일 뿐이다.
+TEMPO_PRIOR_BPM = 120.0
 
 
 def estimate_key(chroma: np.ndarray) -> Tuple[Key, float]:
