@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>코드 인식 &amp; 대체 코드 추천</title>
+<meta name="theme-color" content="#0f1115">
+<title>Chord Analysis Lab</title>
 <style>
   :root {
     color-scheme: dark;
@@ -24,18 +25,24 @@
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   label { color: var(--dim); font-size: 12.5px; }
-  input, select, button {
+  input, select, button, textarea {
     background: var(--panel2); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 8px 11px; font: inherit; font-size: 13px;
   }
   input[type=file] { padding: 6px; }
+  textarea { resize: vertical; }
+  button, summary { min-height: 44px; touch-action: manipulation; }
+  summary { cursor: pointer; padding: 8px 0; }
+  input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; }
+  input[type=file] { max-width: 100%; min-width: 0; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   input:focus, select:focus { outline: 1px solid var(--accent); }
   button { cursor: pointer; border-color: #3a4152; }
   button:hover:not(:disabled) { background: #262c38; }
   button:disabled { opacity: .45; cursor: default; }
   button.primary { background: var(--accent); color: #0b1020; border-color: var(--accent); font-weight: 600; }
   button.primary:hover:not(:disabled) { background: #85b6ff; }
-  .grow { flex: 1 1 260px; min-width: 0; }
+  .grow { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
   .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
   .tabs button.on { background: var(--panel2); border-color: var(--accent); color: var(--accent); }
   .meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--dim); font-size: 12.5px; margin-top: 10px; }
@@ -53,8 +60,9 @@
   .vid button { margin-top: auto; }
 
   .player { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-  @media (max-width: 820px) { .player { grid-template-columns: 1fr; } }
-  .frame { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #000; }
+  @media (max-width: 820px) { .player { grid-template-columns: minmax(0, 1fr); } }
+  .player > div { min-width: 0; }
+  .frame { position: relative; width: 100%; min-height: 200px; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #000; }
   .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
   /* 마디 단위 코드보. 구간을 나열하면 각 코드가 몇 마디짜리인지 안 보인다. */
@@ -133,14 +141,37 @@
   /* 코드 이름은 대소문자가 의미를 가진다 (Dm7 ≠ DM7). h2의 uppercase에서 빼둔다. */
   h2 b, h2 .hint { text-transform: none; letter-spacing: 0; }
   .hidden { display: none !important; }
+  dialog {
+    width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 32px);
+    margin: auto; padding: 20px; overflow-y: auto; background: var(--panel);
+    color: var(--text); border: 1px solid var(--line); border-radius: 12px;
+  }
+  dialog::backdrop { background: #000a; }
+  dialog h2 { color: var(--text); font-size: 18px; }
+  dialog input { width: 100%; font-size: 18px; margin: 8px 0 16px; }
+  dialog button { flex: 1; }
+  @media (max-width: 600px) {
+    header { padding: 16px; }
+    main { padding: 16px 12px max(32px, env(safe-area-inset-bottom)); }
+    .panel { padding: 12px; }
+    input, select, button, textarea { font-size: 16px; max-width: 100%; }
+    input:not([type=checkbox]), select { min-height: 44px; }
+    .row { gap: 8px; }
+    .hint, label { font-size: 14px; overflow-wrap: anywhere; }
+    .chart { grid-template-columns: minmax(0, 1fr); }
+    .chip { min-height: 48px; touch-action: manipulation; }
+    .results { grid-template-columns: minmax(0, 1fr); }
+    .meta { gap: 8px 14px; overflow-wrap: anywhere; }
+    .tabs { gap: 8px; }
+  }
   .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: r .7s linear infinite; vertical-align: -2px; }
   @keyframes r { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <header>
-  <h1>코드 인식 &amp; 대체 코드 추천</h1>
-  <p>곡 제목으로 유튜브를 찾거나 링크를 붙여넣으면 코드를 따고 화성학 대체안을 제안한다</p>
+  <h1>Chord Analysis Lab</h1>
+  <p>YouTube 영상에 연결한 음원으로 코드 진행과 화성을 분석합니다</p>
 </header>
 
 <main>
@@ -165,14 +196,35 @@
         <button class="primary" id="doYt">분석</button>
         <span id="ytStatus" class="hint"></span>
       </div>
+      <div id="sourceStatus" class="hint" role="status" aria-live="polite" style="margin-top:12px"></div>
+      <details id="sourceForm" style="margin-top:14px">
+        <summary>사용 권한이 있는 음원 연결 · 변경</summary>
+        <p class="hint">위 영상 링크에 음원을 한 번 연결하면 다음부터는 링크만으로 분석할 수 있습니다. 직접 만든 음원이나 권리자가 분석·보관을 허락한 원본을 사용해 주세요.</p>
+        <div class="row"><input type="file" id="sourceFile" aria-label="연결할 음원" accept=".wav,.flac,.mp3,.ogg,.aiff,.aif"></div>
+        <p><label for="rightsBasis">사용 권한의 근거</label><br>
+          <textarea id="rightsBasis" rows="2" maxlength="2000" style="width:100%" placeholder="예: 직접 연주·녹음한 음원 / 권리자의 허락과 허용 범위"></textarea></p>
+        <p><label><input id="rightsConfirmed" type="checkbox"> 이 음원을 분석하고 보관할 권한이 있습니다.</label></p>
+        <p><label><input id="sameRecording" type="checkbox"> 영상과 같은 녹음·편집본입니다. (시작 시차만 허용)</label></p>
+        <div class="row">
+          <label for="videoOffset">영상 시작 시차(초)</label>
+          <input id="videoOffset" type="number" step="0.001" min="-900" max="900" value="0" style="width:100px">
+          <label for="rightsExpiry">사용 기한(선택)</label>
+          <input id="rightsExpiry" type="datetime-local">
+        </div>
+        <p class="hint">예: 음원 0초가 영상 5초에 해당하면 시차는 5입니다. 기한은 이 기기의 현지 시각입니다. WAV·FLAC·MP3·OGG·AIFF, 최대 40MB·15분.</p>
+        <p class="hint">연결을 변경하면 새 분석으로 시작하며 이전 교정은 자동 적용하지 않습니다.</p>
+        <button id="registerSource" class="primary">연결하고 분석</button>
+        <span id="registerStatus" class="hint" role="status" aria-live="polite"></span>
+      </details>
       <div id="caps"></div>
+      <details style="margin-top:14px"><summary>연결한 음원 다시 열기</summary><div id="sourceLibrary" style="margin-top:8px"></div></details>
       <div class="results" id="results"></div>
     </div>
 
     <div class="panel">
       <h2>바로 보기 — 데모 음원</h2>
       <p class="hint" style="margin:0 0 12px">
-        유튜브 키나 yt-dlp 없이도 파이프라인 전체(비트·조성·코드 인식 → 대체 코드)를 확인할 수 있다.
+        YouTube 검색 키 없이도 파이프라인 전체(비트·조성·코드 인식 → 대체 코드)를 확인할 수 있다.
         정답 라벨이 함께 있는 합성 음원이라 인식 정확도까지 같이 나온다.
       </p>
       <div class="row" id="demos"><span class="hint">불러오는 중…</span></div>
@@ -209,7 +261,7 @@
         <button class="primary" id="goFile">분석</button>
         <span id="fileStatus" class="hint"></span>
       </div>
-      <p class="hint" style="margin:10px 0 0">유튜브 오디오 추출이 꺼져 있어도 이 경로는 항상 동작한다.</p>
+      <p class="hint" style="margin:10px 0 0">별도 영상 연결 없이 이 파일의 코드 진행을 분석합니다.</p>
     </div>
   </section>
 
@@ -220,6 +272,8 @@
         <!-- 로컬 파일·데모용 플레이어. 어느 탭에서 분석했든 보이도록 결과 패널에 둔다. -->
         <audio id="player" controls class="hidden" style="width:100%"></audio>
         <div id="meta" class="meta"></div>
+        <p id="analysisOrigin" class="hint"></p>
+        <div id="playerStatus" class="hint err" role="status"></div>
         <div id="warnings"></div>
       </div>
       <div>
@@ -294,7 +348,7 @@
   <div class="panel hidden" id="fixPanel">
     <div class="row">
       <span class="hint">
-        <b style="color:var(--text)">코드 칸을 클릭하면 바로 수정</b> — Enter 저장, Esc 취소.
+        <b style="color:var(--text)">코드 칸을 눌러 수정</b> — 터치는 저장·취소 버튼, 키보드는 Enter·Esc.
         <code>/</code> 칸을 고치면 그 박부터 코드가 나뉜다. 선택 중:
         <b id="fixCurrent" style="color:var(--text)">–</b>
       </span>
@@ -303,7 +357,7 @@
     </div>
     <div class="row" style="margin-top:10px">
       <label><input type="checkbox" id="verified" style="vertical-align:-2px"> 이 곡 전체를 확인했다 (검수 완료)</label>
-      <span class="hint" id="verifyHint">— 검수 완료한 곡만 정확도 벤치마크에 쓰인다</span>
+      <span class="hint" id="verifyHint">— 곡 전체를 확인한 경우에만 표시해 주세요</span>
     </div>
   </div>
 
@@ -313,12 +367,24 @@
   </div>
 </main>
 
+<dialog id="chordEditor" aria-labelledby="editorTitle">
+  <form id="chordEditForm">
+    <h2 id="editorTitle">코드 수정</h2>
+    <p id="editorRange" class="hint"></p>
+    <label for="editorChord">새 코드</label>
+    <input id="editorChord" required maxlength="40" autocomplete="off" spellcheck="false" enterkeyhint="done">
+    <p id="editorError" class="hint err" role="alert"></p>
+    <div class="row"><button id="editorCancel" type="button">취소</button><button id="editorSave" type="submit" class="primary">저장</button></div>
+  </form>
+</dialog>
+
 <script>
 const $ = id => document.getElementById(id);
 const state = {
   rows: [], segments: [], selected: -1, ytPlayer: null, timer: null, caps: {},
   chipsBySegment: {}, activeSegment: -1, raf: null, clock: null,
   // 재생 위치 보정(초). 오디오 출력 지연은 기기마다 달라서 사용자가 맞출 수 있게 둔다.
+  videoOffset: 0,
   syncOffset: parseFloat(localStorage.getItem('syncOffset') || '0') || 0,
 };
 
@@ -334,18 +400,12 @@ Object.keys(TABS).forEach(t => $(t).onclick = () => {
 /* ---------- 기능 가용성 ---------- */
 fetch('/api/capabilities').then(r => r.json()).then(c => {
   state.caps = c;
-  const notes = [];
   if (!c.youtube_search) {
-    // 눌러도 503만 나는 버튼을 살아 있는 것처럼 두면 안 된다
     $('doSearch').disabled = true;
     $('q').disabled = true;
-    $('q').placeholder = 'YOUTUBE_API_KEY가 없어 검색은 비활성';
-    notes.push(`유튜브 <b>검색</b>을 켜려면 <code>${esc(c.env_file || '.env')}</code> 에 `
-      + `<code>YOUTUBE_API_KEY=…</code> 한 줄을 넣고 서버를 재시작하면 된다. `
-      + `키 없이도 아래 링크 입력과 데모는 동작한다.`);
+    $('q').placeholder = '검색이 설정되지 않았습니다. 아래에 영상 링크를 입력해 주세요.';
   }
-  if (!c.youtube_audio) notes.push(esc(c.youtube_audio_reason));
-  $('caps').innerHTML = notes.length ? `<div class="banner info">${notes.join('<br>')}</div>` : '';
+  $('caps').innerHTML = '<p class="hint">YouTube는 검색·영상 재생에 사용합니다. 코드 분석은 연결된 별도 음원으로 수행합니다.</p>';
 }).catch(() => {});
 
 /* ---------- 데모 ---------- */
@@ -416,24 +476,108 @@ function renderResults(videos) {
 $('doYt').onclick = analyzeYouTube;
 $('url').addEventListener('keydown', e => { if (e.key === 'Enter') analyzeYouTube(); });
 
+function showSourceStatus(data) {
+  const title = data.video && data.video.title;
+  $('sourceStatus').textContent = (title ? title + ' · ' : '') + data.message;
+  if (data.link) $('videoOffset').value = data.link.video_offset;
+}
+
+async function loadSourceLibrary() {
+  try {
+    const data = await getJSON('/api/audio-sources');
+    $('sourceLibrary').innerHTML = data.sources.length ? data.sources.map((s, i) => `
+      <div class="row" style="margin-bottom:8px"><span class="grow">${esc(s.link.label)} · ${esc(s.message)}</span>
+      <button data-open="${i}">열기</button><button data-revoke="${i}"${s.link.active ? '' : ' disabled'}>연결 해제</button></div>`).join('')
+      : '<p class="hint">연결한 음원이 없습니다.</p>';
+    $('sourceLibrary').querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
+      $('url').value = 'https://www.youtube.com/watch?v=' + data.sources[+b.dataset.open].video_id;
+      analyzeYouTube();
+    });
+    $('sourceLibrary').querySelectorAll('[data-revoke]').forEach(b => b.onclick = async () => {
+      try {
+        const item = data.sources[+b.dataset.revoke];
+        b.disabled = true;
+        const res = await fetch('/api/audio-sources/' + item.video_id, { method: 'DELETE' });
+        if (!res.ok) throw new Error('연결을 해제하지 못했습니다.');
+        showSourceStatus(await res.json());
+        if (state.videoId === item.video_id) {
+          clearAnalysis();
+        }
+        await loadSourceLibrary();
+      } catch (e) { setText('sourceStatus', esc(e.message), true); b.disabled = false; }
+    });
+  } catch (e) { $('sourceLibrary').textContent = e.message; }
+}
+loadSourceLibrary();
+
+$('registerSource').onclick = async () => {
+  const file = $('sourceFile').files[0];
+  const url = $('url').value.trim();
+  if (!url || !file || !$('rightsBasis').value.trim() || !$('rightsConfirmed').checked) {
+    setText('registerStatus', '영상 링크·음원·권한 근거를 입력하고 분석·보관 권한을 확인해 주세요.', true);
+    return;
+  }
+  const fd = new FormData();
+  fd.append('url', url); fd.append('file', file);
+  fd.append('rights_basis', $('rightsBasis').value.trim());
+  fd.append('rights_confirmed', 'true');
+  fd.append('same_recording', String($('sameRecording').checked));
+  fd.append('video_offset', $('videoOffset').value || '0');
+  if ($('rightsExpiry').value) fd.append('expires_at', String(Date.parse($('rightsExpiry').value) / 1000));
+  $('registerSource').disabled = true;
+  setText('registerStatus', '음원을 연결하는 중…');
+  try {
+    const res = await fetch('/api/audio-sources', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(apiError(data, res.status));
+    clearAnalysis();
+    showSourceStatus(data);
+    $('sameRecording').checked = false; $('rightsExpiry').value = '';
+    $('sourceFile').value = ''; $('rightsConfirmed').checked = false;
+    $('rightsBasis').value = '';
+    setText('registerStatus', '연결을 저장했습니다.');
+    await loadSourceLibrary();
+    if (data.status === 'ready') { $('sourceForm').open = false; await analyzeYouTube(); }
+  } catch (e) { setText('registerStatus', esc(e.message), true); }
+  finally { $('registerSource').disabled = false; }
+};
+
+function clearAnalysis() {
+  $('chordEditor').close();
+  teardownPlayer();
+  ['resultPanel', 'beatPanel', 'fixPanel', 'subPanel'].forEach(id => $(id).classList.add('hidden'));
+  state.sourceKey = ''; state.reload = null; state.videoId = null;
+  state.segments = []; state.rows = []; state.activeSegment = -1;
+}
+
 async function analyzeYouTube() {
   const url = $('url').value.trim();
-  if (!url) { setText('ytStatus', '링크를 넣거나 검색 결과를 골라야 한다', true); return; }
+  if (!url) { setText('ytStatus', '영상 링크를 입력하거나 검색 결과를 선택해 주세요.', true); return; }
+  clearAnalysis();
   $('doYt').disabled = true;
-  setText('ytStatus', '<span class="spin"></span> 분석 중…');
+  $('registerSource').disabled = true;
+  setText('ytStatus', '<span class="spin"></span> 연결된 음원 확인 중…');
   const t0 = performance.now();
   try {
-    const data = await postJSON('/api/youtube', {
-      url, key: $('ytkey').value.trim() || null, vocabulary: 'standard', limit: 6,
-    });
-    state.reload = analyzeYouTube;
+    const source = await getJSON('/api/youtube/source?url=' + encodeURIComponent(url));
+    showSourceStatus(source);
+    if (source.status !== 'ready') {
+      $('sourceForm').open = true;
+      setText('ytStatus', esc(source.message), true);
+      return;
+    }
+    setText('ytStatus', '<span class="spin"></span> 분석 중…');
+    const options = {url, key: $('ytkey').value.trim() || null, vocabulary: 'standard', limit: 6};
+    const data = await postJSON('/api/youtube', options);
+    // 입력칸을 바꿔도 교정 후에는 현재 결과의 영상을 다시 연다.
+    state.reload = async () => {
+      const refreshed = await postJSON('/api/youtube', options);
+      render(refreshed, 0);
+    };
     render(data, (performance.now() - t0) / 1000);
-    setText('ytStatus', '');
-  } catch (e) {
-    setText('ytStatus', esc(e.message), true);
-  } finally {
-    $('doYt').disabled = false;
-  }
+    setText('ytStatus', data.cached ? '저장된 분석을 열었습니다.' : '분석을 완료했습니다.');
+  } catch (e) { setText('ytStatus', esc(e.message), true); }
+  finally { $('doYt').disabled = false; $('registerSource').disabled = false; }
 }
 
 /* ---------- 로컬 파일 ---------- */
@@ -452,7 +596,7 @@ $('goFile').onclick = async () => {
   try {
     const res = await fetch('/api/analyze', { method: 'POST', body: fd });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || '분석 실패');
+    if (!res.ok) throw new Error(apiError(data, res.status));
     state.reload = () => $('goFile').onclick();
     render(data, (performance.now() - t0) / 1000);
     setText('fileStatus', '');
@@ -494,7 +638,7 @@ $('goprog').onclick = async () => {
 
 /* ---------- 결과 렌더 ---------- */
 function render(data, elapsed) {
-  const origin = { cache: '캐시 HIT', database: '코드 DB HIT', audio: '오디오 분석' }[data.origin] || data.origin;
+  const origin = (data.cached ? '저장된 결과 · ' : '') + ({ cache: '이전 캐시', database: '코드 DB 참고 진행', audio: '오디오 분석' }[data.origin] || data.origin);
   $('meta').innerHTML = [
     ['소스', data.source], ['처리', origin], ['길이', data.duration.toFixed(1) + '초'],
     ['템포', Math.round(data.tempo) + ' BPM'],
@@ -527,9 +671,13 @@ function render(data, elapsed) {
   renderMeterControls();
   $('verified').checked = !!data.verified;
   $('verifyHint').textContent = data.verified
-    ? '— 이 곡이 정확도 벤치마크에 포함된다'
-    : '— 검수 완료한 곡만 정확도 벤치마크에 쓰인다';
+    ? '— 곡 전체 확인 표시가 저장되었습니다'
+    : '— 곡 전체를 확인한 경우에만 표시해 주세요';
   teardownPlayer();
+  state.videoId = data.video ? data.video.video_id : null;
+  state.videoOffset = data.audio_link ? data.audio_link.video_offset : 0;
+  $('analysisOrigin').textContent = data.audio_link ? '연결된 별도 음원의 분석 결과입니다. YouTube에서 제공한 분석이 아닙니다.' : '';
+  $('playerStatus').textContent = '';
   if (data.video && data.video.video_id) {
     mountYouTube(data.video.video_id);
   } else if (data.audio_url) {
@@ -583,6 +731,10 @@ function renderChart(rows, segments, bars) {
   state.activeSegment = -1;
   [...chart.querySelectorAll('.chip')].forEach(chip => {
     if (chip.dataset.i === undefined) return;
+    chip.tabIndex = 0;
+    chip.setAttribute('role', 'button');
+    chip.setAttribute('aria-label', `${chip.querySelector('.name').textContent} 코드 수정`);
+    chip.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chip.click(); } };
     (state.chipsBySegment[+chip.dataset.i] ||= []).push(chip);
     chip.onclick = () => {
       const i = +chip.dataset.i;
@@ -638,6 +790,16 @@ function startEdit(chip, index, slotStart, slotEnd) {
   const to = slotEnd === undefined || isNaN(slotEnd) ? seg.end : slotEnd;
   const splitting = from > seg.start + 1e-3;
 
+  if (window.innerWidth <= 600 || window.matchMedia('(pointer: coarse)').matches) {
+    state.editContext = { sourceKey: state.sourceKey, from, to, original: row.chord };
+    $('editorRange').textContent = `${fmtTime(from)} ~ ${fmtTime(to)} · 현재 ${row.chord}`;
+    $('editorChord').value = row.chord;
+    $('editorError').textContent = '';
+    $('chordEditor').showModal();
+    $('editorChord').focus(); $('editorChord').select();
+    return;
+  }
+
   const restore = nameEl.innerHTML;
   nameEl.innerHTML = '<input class="inline" spellcheck="false">';
   chip.classList.add('editing');
@@ -677,6 +839,22 @@ function startEdit(chip, index, slotStart, slotEnd) {
     }
   };
 }
+
+$('editorCancel').onclick = () => $('chordEditor').close();
+$('chordEditor').addEventListener('cancel', e => { if ($('editorSave').disabled) e.preventDefault(); });
+$('chordEditForm').onsubmit = async e => {
+  e.preventDefault();
+  const edit = state.editContext;
+  if (!edit || edit.sourceKey !== state.sourceKey) return;
+  $('editorSave').disabled = true; $('editorCancel').disabled = true;
+  try {
+    await postJSON('/api/corrections', { source_key: edit.sourceKey, start: edit.from,
+      end: edit.to, chord: $('editorChord').value.trim(), original: edit.original });
+    $('chordEditor').close();
+    await reloadAnalysis();
+  } catch (err) { $('editorError').textContent = err.message; }
+  finally { $('editorSave').disabled = false; $('editorCancel').disabled = false; }
+};
 
 /* ---------- 템포 지정 ---------- */
 async function applyTempo(bpm, beatOffset) {
@@ -857,7 +1035,7 @@ $('tapApply').onclick = () => {
 };
 
 function currentPlaybackTime() {
-  if (state.ytPlayer && state.ytPlayer.getCurrentTime) return state.ytPlayer.getCurrentTime();
+  if (state.ytPlayer && state.ytPlayer.getCurrentTime) return state.ytPlayer.getCurrentTime() - state.videoOffset;
   if (!$('player').classList.contains('hidden') && $('player').src) return $('player').currentTime;
   return null;
 }
@@ -926,8 +1104,8 @@ $('verified').onchange = async () => {
       source_key: state.sourceKey, verified: $('verified').checked,
     });
     $('verifyHint').textContent = $('verified').checked
-      ? '— 이 곡이 정확도 벤치마크에 포함된다'
-      : '— 검수 완료한 곡만 정확도 벤치마크에 쓰인다';
+      ? '— 곡 전체 확인 표시가 저장되었습니다'
+      : '— 곡 전체를 확인한 경우에만 표시해 주세요';
   } catch (e) {
     $('verified').checked = !$('verified').checked;
   }
@@ -965,7 +1143,13 @@ function mountYouTube(videoId) {
       videoId,
       playerVars: { playsinline: 1, rel: 0 },
       events: {
-        onReady: startSync,
+        onReady: highlightOnce,
+        onPlaybackRateChange: () => { state.clock = null; highlightOnce(); },
+        onError: e => {
+          stopSync();
+          const messages = {100: '삭제되었거나 비공개인 영상입니다.', 101: '이 영상은 외부 재생이 제한되어 있습니다.', 150: '이 영상은 외부 재생이 제한되어 있습니다.', 153: '영상 플레이어의 사이트 식별 정보를 확인할 수 없습니다.'};
+          $('playerStatus').textContent = messages[e.data] || 'YouTube 영상을 재생하지 못했습니다.';
+        },
         // 재생 중일 때만 루프를 돌린다. 멈췄으면 마지막 위치만 한 번 반영.
         onStateChange: e => {
           state.clock = null;
@@ -991,7 +1175,9 @@ function teardownPlayer() {
   stopSync();
   if (state.ytPlayer && state.ytPlayer.destroy) state.ytPlayer.destroy();
   state.ytPlayer = null;
+  if (!$('yt')) { const el = document.createElement('div'); el.id = 'yt'; $('frame').replaceChildren(el); }
   $('yt').innerHTML = '';
+  $('player').pause();
   $('frame').classList.add('hidden');
   $('player').classList.add('hidden');
   $('player').removeAttribute('src');
@@ -1015,16 +1201,17 @@ function playbackTime() {
 
   const raw = p.getCurrentTime();
   const now = performance.now();
+  const rate = p.getPlaybackRate ? p.getPlaybackRate() : 1;
   const playing = !p.getPlayerState || p.getPlayerState() === 1;
   const clock = state.clock;
 
-  if (!playing || !clock || raw !== clock.raw) {
-    state.clock = { raw, at: now };
-    return raw + state.syncOffset;
+  if (!playing || !clock || raw !== clock.raw || rate !== clock.rate) {
+    state.clock = { raw, at: now, rate };
+    return raw - state.videoOffset + state.syncOffset;
   }
   // 값이 그대로면 흐른 시간만큼 보간. 너무 오래 튀지 않게 상한을 둔다.
   const drift = Math.min((now - clock.at) / 1000, 0.5);
-  return clock.raw + drift + state.syncOffset;
+  return clock.raw + drift * rate - state.videoOffset + state.syncOffset;
 }
 
 function startSync() {
@@ -1097,15 +1284,22 @@ function seek(i) {
   const seg = state.segments[i];
   if (!seg) return;
   state.clock = null;          // 탐색 후에는 보간 기준점을 다시 잡아야 한다
-  if (state.ytPlayer && state.ytPlayer.seekTo) state.ytPlayer.seekTo(seg.start, true);
+  if (state.ytPlayer && state.ytPlayer.seekTo) state.ytPlayer.seekTo(Math.max(0, seg.start + state.videoOffset), true);
   else if (!$('player').classList.contains('hidden')) $('player').currentTime = seg.start;
 }
 
 /* ---------- 유틸 ---------- */
+function apiError(data, status) {
+  const detail = data.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && detail.message) return detail.message;
+  if (Array.isArray(detail)) return '입력값을 확인해 주세요: ' + detail.map(d => d.msg).join(', ');
+  return `요청 실패 (${status})`;
+}
 async function getJSON(url) {
   const res = await fetch(url);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error(apiError(data, res.status));
   return data;
 }
 async function postJSON(url, body) {
@@ -1113,7 +1307,7 @@ async function postJSON(url, body) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error(apiError(data, res.status));
   return data;
 }
 function setText(id, html, isErr) {

@@ -4,7 +4,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.venv/
+.venv
 venv/
 *.egg-info/
 
@@ -15,3 +15,14 @@ data/
 *.mp3
 *.flac
 *.m4a
+*.ogg
+*.aiff
+*.aif
+*.aac
+*.opus
+*.mp4
+*.webm
+core
+core.*
+
+/work/

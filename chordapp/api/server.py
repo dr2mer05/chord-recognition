@@ -8,24 +8,24 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import math
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..models import AnalysisResult
 from ..service import AnalysisCache, ChordService, LocalJsonDatabase, NullDatabase
 from ..service.youtube import (
-    AudioFetchDisabled,
-    DisabledAudioProvider,
     InvalidVideoUrl,
     SearchUnavailable,
     YouTubeError,
     parse_video_id,
 )
+from ..service.audio_sources import AudioSourceUnavailable
 from ..theory.chord import Chord
 from ..theory.key import Key
 from ..theory.substitution import suggest
@@ -39,7 +39,7 @@ DB_PATH = DATA_DIR / "chord_db.json"
 ALLOWED_SUFFIXES = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aiff", ".aif"}
 MAX_UPLOAD_BYTES = 40 * 1024 * 1024
 
-app = FastAPI(title="코드 인식 & 대체 코드 추천", version="0.1.0")
+app = FastAPI(title="Chord Analysis Lab", version="0.2.0")
 
 
 def _build_service() -> ChordService:
@@ -57,9 +57,9 @@ service = _build_service()
 class YouTubeRequest(BaseModel):
     url: str
     key: Optional[str] = None
-    vocabulary: str = "standard"
-    limit: int = 6
-    max_seconds: Optional[float] = None
+    vocabulary: Literal["triads", "standard", "extended"] = "standard"
+    limit: int = Field(6, ge=1, le=20)
+    max_seconds: Optional[float] = Field(None, gt=0, le=900, allow_inf_nan=False)
 
 
 class SubstitutionRequest(BaseModel):
@@ -97,12 +97,11 @@ def _capabilities() -> dict:
     """프론트엔드가 어떤 입력 경로가 살아 있는지 알아야 안내 문구를 낼 수 있다."""
     from ..config import ENV_FILENAME, PROJECT_ROOT
 
-    provider = service.audio_provider
     return {
         "youtube_search": bool(getattr(service.search_backend, "available", False)),
-        "youtube_audio": bool(getattr(provider, "enabled", False)),
-        "youtube_audio_reason": "" if getattr(provider, "enabled", False)
-        else getattr(provider, "reason", DisabledAudioProvider.reason),
+        "audio_source_registration": True,
+        "youtube_audio": False,
+        "youtube_audio_reason": "영상별로 권한이 확인된 별도 음원을 연결해 분석합니다. YouTube에서 음원을 추출하지 않습니다.",
         "env_file": str(PROJECT_ROOT / ENV_FILENAME),
     }
 
@@ -110,6 +109,84 @@ def _capabilities() -> dict:
 @app.get("/api/capabilities")
 def capabilities() -> dict:
     return _capabilities()
+
+
+@app.get("/api/audio-sources")
+def audio_sources() -> dict:
+    return {"sources": service.audio_sources.list_links()}
+
+
+@app.get("/api/youtube/source")
+def youtube_source(url: str = Query(...)) -> dict:
+    try:
+        status = service.audio_sources.status(url)
+        info = service.video_metadata(status["video_id"])
+        status["video"] = info.to_dict() if info else {"video_id": status["video_id"]}
+        return status
+    except InvalidVideoUrl as exc:
+        raise HTTPException(400, str(exc))
+    except YouTubeError as exc:
+        raise HTTPException(502, str(exc))
+
+
+@app.post("/api/audio-sources", status_code=201)
+async def register_audio_source(
+    file: UploadFile = File(...),
+    url: str = Form(...),
+    rights_basis: str = Form(..., min_length=1, max_length=2000),
+    rights_confirmed: bool = Form(...),
+    same_recording: bool = Form(...),
+    video_offset: float = Form(0.0),
+    expires_at: Optional[float] = Form(None),
+) -> dict:
+    """권한을 확인한 별도 원본을 한 번 보관한다. 임의 URL/서버 파일 경로는 받지 않는다."""
+    try:
+        video_id = parse_video_id(url)
+    except InvalidVideoUrl as exc:
+        raise HTTPException(400, str(exc))
+    if not rights_confirmed:
+        raise HTTPException(400, "이 음원을 분석·보관할 권한이 있는지 확인해 주세요.")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_SUFFIXES - {".m4a"}:
+        raise HTTPException(400, "연결 가능한 형식: WAV, FLAC, MP3, OGG, AIFF. 다른 형식은 변환 후 연결해 주세요.")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=UPLOAD_DIR, suffix=suffix, delete=False) as tmp:
+        temp_path = Path(tmp.name)
+    try:
+        size = 0
+        with temp_path.open("wb") as stream:
+            while chunk := await file.read(1 << 20):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "파일이 너무 큽니다 (최대 40MB).")
+                stream.write(chunk)
+        import soundfile as sf
+        try:
+            audio = sf.info(str(temp_path))
+        except (RuntimeError, ValueError):
+            raise HTTPException(400, "오디오 파일을 읽을 수 없습니다. 형식과 파일 내용을 확인해 주세요.")
+        if not math.isfinite(audio.duration) or not 0 < audio.duration <= 900:
+            raise HTTPException(400, "0초보다 길고 15분 이내인 음원을 연결해 주세요.")
+        link = service.audio_sources.register(
+            video_id, temp_path, label=Path(file.filename or "음원").name,
+            rights_basis=rights_basis, same_recording=same_recording,
+            video_offset=video_offset, expires_at=expires_at,
+        )
+        return service.audio_sources.status(link.video_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    finally:
+        temp_path.unlink(missing_ok=True)
+        await file.close()
+
+
+@app.delete("/api/audio-sources/{video_id}")
+def revoke_audio_source(video_id: str) -> dict:
+    try:
+        service.audio_sources.revoke(video_id)
+        return service.audio_sources.status(video_id)
+    except InvalidVideoUrl as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.get("/api/search")
@@ -136,8 +213,8 @@ def analyze_youtube(req: YouTubeRequest) -> JSONResponse:
         )
     except InvalidVideoUrl as exc:
         raise HTTPException(400, str(exc))
-    except AudioFetchDisabled as exc:
-        raise HTTPException(501, str(exc))
+    except AudioSourceUnavailable as exc:
+        raise HTTPException(409, {"code": exc.code, "message": str(exc)})
     except YouTubeError as exc:
         raise HTTPException(502, str(exc))
     except ValueError as exc:
@@ -265,8 +342,8 @@ def demo_audio(name: str) -> FileResponse:
 
 class CorrectionRequest(BaseModel):
     source_key: str
-    start: float
-    end: float
+    start: float = Field(..., ge=0, allow_inf_nan=False)
+    end: float = Field(..., gt=0, allow_inf_nan=False)
     chord: str
     original: str = ""
 
@@ -276,9 +353,26 @@ class VerifyRequest(BaseModel):
     verified: bool = True
 
 
+def _editable_source(source_key: str) -> dict:
+    source = service.corrections.source(source_key)
+    if source is None:
+        raise HTTPException(404, "등록되지 않은 곡")
+    if source_key.startswith("linked:"):
+        try:
+            current = service.audio_sources.resolve(source_key.split(":")[1])
+        except AudioSourceUnavailable as exc:
+            raise HTTPException(409, {"code": exc.code, "message": str(exc)})
+        if current.source_key != source_key:
+            raise HTTPException(409, {"code": "source_replaced", "message": "음원 연결이 변경되었습니다. 현재 분석을 다시 열어 주세요."})
+    return source
+
+
 @app.post("/api/corrections")
 def add_correction(req: CorrectionRequest) -> JSONResponse:
     """틀린 코드 하나를 고친다. 원본 인식 결과는 캐시에 그대로 남는다."""
+    source = _editable_source(req.source_key)
+    if req.end <= req.start or req.end > source["duration"] + 0.001:
+        raise HTTPException(400, "교정 구간이 음원의 시간 범위를 벗어났습니다.")
     try:
         fix = service.corrections.add(
             req.source_key, req.start, req.end, req.chord, req.original
@@ -290,6 +384,7 @@ def add_correction(req: CorrectionRequest) -> JSONResponse:
 
 @app.delete("/api/corrections")
 def remove_correction(source_key: str = Query(...), start: float = Query(...)) -> JSONResponse:
+    _editable_source(source_key)
     removed = service.corrections.remove(source_key, start)
     return JSONResponse({"ok": True, "removed": removed})
 
@@ -300,8 +395,7 @@ def verify_source(req: VerifyRequest) -> JSONResponse:
 
     틀린 코드만 골라 고친 표본은 편향돼 있어서 정확도를 계산할 수 없다.
     """
-    if service.corrections.source(req.source_key) is None:
-        raise HTTPException(404, "등록되지 않은 곡")
+    _editable_source(req.source_key)
     service.corrections.set_verified(req.source_key, req.verified)
     return JSONResponse({"ok": True, "verified": req.verified})
 
@@ -318,8 +412,7 @@ def set_tempo(req: TempoRequest) -> JSONResponse:
 
     69 BPM 발라드를 136으로 잡는 옥타브 오류가 대표적인데, 사용자는 정답을 안다.
     """
-    if service.corrections.source(req.source_key) is None:
-        raise HTTPException(404, "등록되지 않은 곡")
+    _editable_source(req.source_key)
     try:
         service.corrections.set_tempo(req.source_key, req.bpm, req.beat_offset)
     except ValueError as exc:
@@ -340,8 +433,7 @@ def set_meter(req: MeterRequest) -> JSONResponse:
     박자표 자동 판별은 넣지 않았다 — 저역 온셋의 위상 대비로 구별해 보려 했는데
     정답이 4/4인 곡에서도 6박이 더 높게 나와 신뢰할 수 없었다.
     """
-    if service.corrections.source(req.source_key) is None:
-        raise HTTPException(404, "등록되지 않은 곡")
+    _editable_source(req.source_key)
     try:
         service.corrections.set_meter(req.source_key, req.beats_per_bar, req.downbeat_offset)
     except ValueError as exc:

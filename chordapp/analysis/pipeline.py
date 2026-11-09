@@ -1,4 +1,4 @@
-﻿"""오디오 → 코드 진행. 파이프라인 1-2의 [C] 분기."""
+"""오디오 → 코드 진행. 파이프라인 1-2의 [C] 분기."""
 
 from __future__ import annotations
 
@@ -187,5 +187,7 @@ def analyze_audio(
         beats_per_bar=beats_per_bar,
         recognizers=[p.name for p in predictions],
         origin="audio",
+        execution={"beat_tracker": feats.beat_source, "separated": feats.separated,
+                   "recognizers": [p.name for p in predictions]},
         warnings=warnings,
     )

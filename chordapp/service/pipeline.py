@@ -1,4 +1,4 @@
-﻿"""파이프라인 1-2 오케스트레이션: [A] 캐시 → [B] 코드 DB → [C] 오디오 분석.
+"""파이프라인 1-2 오케스트레이션: [A] 캐시 → [B] 코드 DB → [C] 오디오 분석.
 
 순서 자체가 비용 구조다. 오디오 분석은 마지막 수단.
 """
@@ -17,14 +17,12 @@ from ..theory.substitution import suggest
 from .cache import AnalysisCache, file_fingerprint
 from .chord_db import ChordDatabase, NullDatabase
 from .corrections import CorrectionStore, apply_corrections
+from .audio_sources import AudioSourceStore
 from .youtube import (
-    AudioProvider,
     VideoInfo,
     VideoSearch,
-    default_audio_provider,
     default_search,
     parse_video_id,
-    split_artist_title,
 )
 
 NAMESPACE_AUDIO = "audio"
@@ -42,7 +40,7 @@ class ChordService:
         vocabulary: str = "standard",
         prior: TransitionPrior = DEFAULT_PRIOR,
         search: Optional[VideoSearch] = None,
-        audio_provider: Optional[AudioProvider] = None,
+        audio_sources: Optional[AudioSourceStore] = None,
         corrections: Optional[CorrectionStore] = None,
     ):
         self.cache = cache or AnalysisCache()
@@ -50,7 +48,7 @@ class ChordService:
         self.vocabulary = vocabulary
         self.prior = prior
         self.search_backend = search or default_search()
-        self.audio_provider = audio_provider or default_audio_provider()
+        self.audio_sources = audio_sources or AudioSourceStore()
         self.corrections = corrections or CorrectionStore()
 
     # -- 사용자 교정 ----------------------------------------------------
@@ -97,101 +95,31 @@ class ChordService:
         max_seconds: Optional[float] = None,
         use_cache: bool = True,
     ) -> Tuple[AnalysisResult, Optional[VideoInfo]]:
-        """[A] 캐시 → [B] 코드 DB → [C] 오디오 분석 순서로 처리한다.
-
-        캐시 키가 영상 ID라 같은 영상은 누가 요청해도 연산이 한 번뿐이다.
-        이 순서가 곧 비용 구조라서, 오디오 분석은 마지막 수단이다.
-        """
+        """허용된 별도 음원 연결 → 원본 분석 캐시 → 분석. 권한은 HIT 전에도 확인한다."""
         video_id = parse_video_id(url_or_id)
-        vocab = vocabulary or self.vocabulary
-        key_ = f"youtube:{video_id}"
-        tempo_override = self.corrections.tempo(key_)
-        beats_per_bar = self.corrections.beats_per_bar(key_) or 4
-        downbeat_offset = self.corrections.downbeat_offset(key_)
-        beat_offset = self.corrections.beat_offset(key_)
-        options: Dict[str, Any] = {
-            "vocabulary": vocab,
-            "key": key_override,
-            "inversions": detect_inversions,
-            "max_seconds": max_seconds,
-            # 분리 여부로 결과가 달라지므로 캐시를 분리해야 한다
-            "separate": self._separation_setting(separate),
-            # 사용자가 템포를 지정하면 격자가 통째로 달라진다
-            "tempo": tempo_override,
-            "meter": (beats_per_bar, downbeat_offset, beat_offset),
-            # 분석 로직이 바뀌면 옛 결과를 그대로 쓰면 안 된다
-            "algo": ANALYSIS_VERSION,
-        }
-        cache_key = self.cache.make_key(NAMESPACE_YOUTUBE, video_id, **options)
-
-        # [A] 캐시
-        if use_cache:
-            hit = self.cache.get(cache_key)
-            if hit is not None:
-                result = AnalysisResult.from_dict(hit)
-                result.cached = True
-                result.origin = "cache"
-                result.source_key = f"youtube:{video_id}"
-                if not result.audio_path:
-                    candidate = AUDIO_DIR / f"{video_id}.wav"
-                    result.audio_path = str(candidate) if candidate.is_file() else ""
-                self._register(result)
-                return result, self._video_from_cache(hit)
-
-        info = self.search_backend.metadata(video_id)
-
-        # [B] 공개 코드 DB — 사람이 만든 데이터가 더 정확하고 연산도 0
-        if info is not None and info.title:
-            artist, title = split_artist_title(info.title, info.channel)
-            if artist and title:
-                found = self.database.lookup(artist, title)
-                if found is not None:
-                    found.source = info.title
-                    if use_cache:
-                        self.cache.put(cache_key, NAMESPACE_YOUTUBE,
-                                       self._with_video(found.to_dict(), info))
-                    return found, info
-
-        # [C] 오디오 분석
-        audio_path = self.audio_provider.fetch(video_id, AUDIO_DIR)
-        from ..analysis.pipeline import analyze_audio
-
-        result = analyze_audio(
-            str(audio_path),
-            vocabulary=vocab,
-            key_override=Key.parse(key_override) if key_override else None,
-            detect_inversions=detect_inversions,
-            separate=separate,
-            tempo_override=tempo_override,
-            beats_per_bar=beats_per_bar,
-            downbeat_offset=downbeat_offset,
-            beat_offset=beat_offset,
-            max_seconds=max_seconds,
+        link = self.audio_sources.resolve(video_id)
+        result = self.analyze_file(
+            link.path, key_override=key_override, vocabulary=vocabulary,
+            detect_inversions=detect_inversions, separate=separate,
+            max_seconds=max_seconds, use_cache=use_cache, source_key=link.source_key,
         )
-        result.source = info.title if info and info.title else video_id
-        result.source_key = f"youtube:{video_id}"
-        result.audio_path = str(audio_path)
-        if use_cache:
-            self.cache.put(cache_key, NAMESPACE_YOUTUBE, self._with_video(result.to_dict(), info))
+        # 영상 메타데이터는 분석 결과와 별도 캐시·만료 주기를 가진다.
+        info = self.video_metadata(video_id)
+        result.source = info.title if info and info.title else link.label
+        result.audio_link = link.to_dict()
         self._register(result)
         return result, info
 
-    @staticmethod
-    def _with_video(payload: Dict[str, Any], info: Optional[VideoInfo]) -> Dict[str, Any]:
+    def video_metadata(self, video_id: str) -> Optional[VideoInfo]:
+        cache_key = self.cache.make_key("video_metadata", video_id)
+        hit = self.cache.get(cache_key, max_age=24 * 60 * 60)
+        if hit is not None:
+            return VideoInfo(**hit)
+        info = self.search_backend.metadata(video_id)
         if info is not None:
-            payload = dict(payload, video=info.to_dict())
-        return payload
-
-    @staticmethod
-    def _video_from_cache(payload: Dict[str, Any]) -> Optional[VideoInfo]:
-        raw = payload.get("video")
-        if not raw:
-            return None
-        return VideoInfo(
-            video_id=raw["video_id"], title=raw.get("title", ""),
-            channel=raw.get("channel", ""), duration=raw.get("duration"),
-            thumbnail=raw.get("thumbnail", ""),
-        )
+            from dataclasses import asdict
+            self.cache.put(cache_key, "video_metadata", asdict(info))
+        return info
 
     # -- [A] + [C] -----------------------------------------------------
     def analyze_file(
@@ -203,11 +131,12 @@ class ChordService:
         separate: Optional[bool] = None,
         max_seconds: Optional[float] = None,
         use_cache: bool = True,
+        source_key: Optional[str] = None,
     ) -> AnalysisResult:
         path = Path(path)
         vocab = vocabulary or self.vocabulary
         fingerprint = file_fingerprint(path)
-        key_ = f"file:{fingerprint}"
+        key_ = source_key or f"file:{fingerprint}"
         tempo_override = self.corrections.tempo(key_)
         beats_per_bar = self.corrections.beats_per_bar(key_) or 4
         downbeat_offset = self.corrections.downbeat_offset(key_)
@@ -225,6 +154,10 @@ class ChordService:
             # 분석 로직이 바뀌면 옛 결과를 그대로 쓰면 안 된다
             "algo": ANALYSIS_VERSION,
         }
+        from ..analysis.runtime import runtime_identity, cacheable_execution
+        identity = runtime_identity(vocab, options["separate"], tempo_override)
+        options["runtime"] = identity
+        options["source_key"] = key_
         cache_key = self.cache.make_key(NAMESPACE_AUDIO, fingerprint, **options)
 
         if use_cache:
@@ -232,10 +165,9 @@ class ChordService:
             if hit is not None:
                 result = AnalysisResult.from_dict(hit)
                 result.cached = True
-                result.origin = "cache"
                 # 캐시 payload를 믿지 않고 다시 세운다. 예전에 저장된 항목에는
                 # 이 필드들이 없어서, 그대로 두면 교정을 붙일 수 없다.
-                result.source_key = f"file:{fingerprint}"
+                result.source_key = key_
                 result.audio_path = str(path.resolve())
                 self._register(result)
                 return result
@@ -248,7 +180,7 @@ class ChordService:
             vocabulary=vocab,
             key_override=Key.parse(key_override) if key_override else None,
             detect_inversions=detect_inversions,
-            separate=separate,
+            separate=options["separate"],
             tempo_override=tempo_override,
             beats_per_bar=beats_per_bar,
             downbeat_offset=downbeat_offset,
@@ -256,9 +188,10 @@ class ChordService:
             max_seconds=max_seconds,
         )
         result.source = path.name
-        result.source_key = f"file:{fingerprint}"
+        result.source_key = key_
         result.audio_path = str(path.resolve())
-        if use_cache:
+        result.execution["environment"] = identity
+        if use_cache and cacheable_execution(identity, result.execution):
             self.cache.put(cache_key, NAMESPACE_AUDIO, result.to_dict())
         self._register(result)
         return result

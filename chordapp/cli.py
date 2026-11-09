@@ -105,7 +105,6 @@ def _print_substitutions(service, result, args: argparse.Namespace) -> None:
 def cmd_config(args: argparse.Namespace) -> int:
     """설정이 제대로 잡혔는지 확인. 키 값 자체는 출력하지 않는다."""
     from .config import ENV_FILENAME, PROJECT_ROOT, status
-    from .service.youtube import YtDlpProvider
 
     info = status()
     print(f"\n설정 파일: {info['env_file']}  ({'있음' if info['env_file_exists'] else '없음'})")
@@ -116,11 +115,7 @@ def cmd_config(args: argparse.Namespace) -> int:
     print(f"\n  YOUTUBE_API_KEY       {key_state}")
     print(f"  → 유튜브 검색:        {'사용 가능' if info['youtube_api_key_set'] else '비활성'}")
 
-    provider = YtDlpProvider()
-    print(f"\n  CHORDAPP_ENABLE_YTDLP {'1 (켜짐)' if info['ytdlp_enabled'] else '없음 (꺼짐)'}")
-    print(f"  yt-dlp 실행파일       {provider.binary or '없음'}")
-    print(f"  → 유튜브 오디오 추출: {'사용 가능' if provider.enabled else '비활성'}")
-
+    print("\n  YouTube 음원: 권한이 확인된 별도 음원을 웹에서 한 번 연결해 사용")
     from .analysis.separation import ENABLE_ENV, default_separator
 
     sep = default_separator().status()
