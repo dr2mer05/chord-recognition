@@ -422,7 +422,7 @@ def set_tempo(req: TempoRequest) -> JSONResponse:
 
 class MeterRequest(BaseModel):
     source_key: str
-    beats_per_bar: Optional[int] = None    # None이면 기본값(4)으로
+    beats_per_bar: Optional[int] = None    # None이면 자동 추정 (추정 불가 시 4박)
     downbeat_offset: Optional[int] = None  # 마디 시작을 몇 박 밀지
 
 

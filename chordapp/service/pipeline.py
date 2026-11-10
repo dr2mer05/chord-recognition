@@ -138,7 +138,7 @@ class ChordService:
         fingerprint = file_fingerprint(path)
         key_ = source_key or f"file:{fingerprint}"
         tempo_override = self.corrections.tempo(key_)
-        beats_per_bar = self.corrections.beats_per_bar(key_) or 4
+        beats_per_bar = self.corrections.beats_per_bar(key_)
         downbeat_offset = self.corrections.downbeat_offset(key_)
         beat_offset = self.corrections.beat_offset(key_)
         options: Dict[str, Any] = {

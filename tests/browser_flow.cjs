@@ -26,6 +26,17 @@ const assert = require('node:assert/strict');
  assert(await page.locator('#resultPanel').isVisible());
  const first = await page.evaluate(()=>({sourceKey:state.sourceKey, segmentCount:state.segments.length, offset:state.videoOffset}));
  assert(first.sourceKey.startsWith('linked:' + videoId + ':')); assert(first.segmentCount>0); assert.equal(first.offset,5);
+ const expectedMeter = Number(process.env.CHORDAPP_EXPECTED_METER || 0);
+ if (expectedMeter) {
+  assert.equal(await page.evaluate(()=>state.beatsPerBar),expectedMeter);
+  assert(await page.locator('.measure .chips').evaluateAll((nodes,m)=>nodes.every(n=>n.children.length===m),expectedMeter));
+  await page.locator('#meterButtons [data-m="4"]').click();
+  await page.waitForFunction(()=>state.beatsPerBar===4 && state.meterOverride===4);
+  assert(await page.locator('.measure .chips').evaluateAll(nodes=>nodes.every(n=>n.children.length===4)));
+  await page.locator('#meterButtons [data-m="0"]').click();
+  await page.waitForFunction(m=>state.beatsPerBar===m && !state.meterOverride,expectedMeter);
+  assert((await page.locator('#meta').textContent()).includes('저장된 결과'));
+ }
  await page.locator('.chip[data-i="0"]').first().click();
  await page.locator('#editorChord').fill('Cmaj7');
  const save = await page.locator('#editorSave').boundingBox(); assert(save.height>=44 && save.width>=44);
@@ -55,7 +66,7 @@ const assert = require('node:assert/strict');
  await page.locator('#doYt').click();
  await page.waitForFunction(()=>document.querySelector('#ytStatus').textContent.includes('해제'));
  assert.equal(errors.length,0,errors.join('\n'));
- console.log(JSON.stringify({passed:true,viewportWidth:width,checks:['missing source guidance','real upload and CPU analysis','correction persisted','reload uses cache','video offset and rate','seek and tap mapping','player error','revocation blocks cache','responsive layout'],...first,clock,pageErrors:errors}));
+ console.log(JSON.stringify({passed:true,viewportWidth:width,meterContract:expectedMeter ? {automatic:expectedMeter,manual:4,restored:expectedMeter} : null,checks:['missing source guidance','real upload and CPU analysis','correction persisted','reload uses cache','video offset and rate','seek and tap mapping','player error','revocation blocks cache','responsive layout'],...first,clock,pageErrors:errors}));
  await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
 

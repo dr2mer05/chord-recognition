@@ -1042,7 +1042,7 @@ function currentPlaybackTime() {
 $('tempoBpm').addEventListener('keydown', e => { if (e.key === 'Enter') $('tempoSet').click(); });
 
 /* ---------- 박자 / 마디 시작 ---------- */
-const METERS = [2, 3, 4, 6, 0];   // 0 = 자동(기본 4박)
+const METERS = [2, 3, 4, 6, 0];   // 0 = 자동 (추정할 수 없을 때 4박)
 
 async function applyMeter(beatsPerBar, offset) {
   if (!state.sourceKey) return;

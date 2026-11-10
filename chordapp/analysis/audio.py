@@ -73,7 +73,7 @@ def extract_features(
     path: str,
     sr: int = SR,
     max_seconds: Optional[float] = None,
-    beats_per_bar: int = 4,
+    beats_per_bar: Optional[int] = None,
     chroma_fmin: str = CHROMA_FMIN,
     chroma_octaves: int = CHROMA_OCTAVES,
     harmonic_paths: Optional[Sequence[str]] = None,
@@ -85,6 +85,9 @@ def extract_features(
 ) -> AudioFeatures:
     """`harmonic_paths`/`bass_path`를 주면 그 스템으로 크로마를 만든다.
 
+    `beats_per_bar=None`은 자동, 명시적인 값은 수동 지정이다.
+    수동 지정은 추적기보다 우선하며 비트 시각은 유지한다.
+
     `harmonic_paths`는 여러 스템을 받아 합친다. `other`(기타·건반)만 쓰면
     베이스가 빠져서 코드 근음 정보를 잃는다 — 실측에서 `other` 단독은 원본 믹스보다
     확신도가 오히려 낮았다(0.418 vs 0.433). `other + bass`(= 믹스에서 보컬·드럼만
@@ -95,6 +98,8 @@ def extract_features(
     """
     import librosa
 
+    meter_override = beats_per_bar
+    beats_per_bar = meter_override or 4
     y, sr = load_audio(path, sr=sr, max_seconds=max_seconds)
 
     if tracker is _USE_DEFAULT_TRACKER:
@@ -115,7 +120,7 @@ def extract_features(
     if grid is not None:
         beat_times = np.asarray(grid.beat_times, dtype=float)
         tempo = grid.tempo
-        if grid.beats_per_bar:
+        if meter_override is None and grid.beats_per_bar:
             beats_per_bar = grid.beats_per_bar
     else:
         tempo, beat_frames = _beat_track(
@@ -180,7 +185,13 @@ def extract_features(
         # 추적기가 다운비트를 직접 준다. 온셋 세기로 위상을 추측하던 자체
         # 휴리스틱보다 이쪽이 훨씬 낫다.
         downbeats = grid.downbeat_indices(beats_per_bar=beats_per_bar)
-        if downbeat_offset:
+        if meter_override is not None:
+            # 수동 박자표로 다시 묶되 기존 첫 다운비트의 위치를 기준으로 한다.
+            # 비트 시각이나 추적 모델의 출력 자체는 수정하지 않는다.
+            first = int(downbeats[0]) if len(downbeats) else 0
+            phase = (first + downbeat_offset) % beats_per_bar
+            downbeats = np.arange(phase, len(beat_times), beats_per_bar, dtype=int)
+        elif downbeat_offset:
             downbeats = np.clip(downbeats + downbeat_offset, 0, len(beat_times) - 1)
     else:
         downbeats = estimate_downbeats(

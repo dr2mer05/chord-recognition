@@ -37,7 +37,7 @@ def analyze_audio(
     path: str,
     vocabulary: str = "standard",
     recognizers: Optional[Sequence[Recognizer]] = None,
-    beats_per_bar: int = 4,
+    beats_per_bar: Optional[int] = None,
     max_seconds: Optional[float] = None,
     key_override: Optional[Key] = None,
     detect_inversions: bool = True,
@@ -70,6 +70,8 @@ def analyze_audio(
         beat_offset=beat_offset,
         tracker=tracker,
     )
+    # 특징 추출에서 자동/수동 우선순위를 확정한다. 기본 4박으로 다시 덮지 않는다.
+    resolved_beats_per_bar = feats.beats_per_bar
     if feats.beat_source != "librosa":
         warnings.append(f"비트·다운비트를 {feats.beat_source}로 추적 (librosa보다 정확)")
     # 사용자가 탭으로 격자를 확정했거나 마디 시작을 직접 민 경우에는
@@ -78,7 +80,7 @@ def analyze_audio(
 
     if tempo_override:
         warnings.append(f"템포를 {tempo_override:.0f} BPM으로 지정해 격자를 다시 맞춤")
-    if beats_per_bar != 4:
+    if beats_per_bar is not None:
         warnings.append(f"박자를 {beats_per_bar}박/마디로 지정")
     if downbeat_offset:
         warnings.append(f"마디 시작을 {downbeat_offset}박 밀어서 맞춤")
@@ -156,7 +158,7 @@ def analyze_audio(
 
     segments = segment_beats(
         chords, confidence, agreement, feats.beat_times, feats.duration,
-        feats.downbeat_indices, beats_per_bar,
+        feats.downbeat_indices, resolved_beats_per_bar,
     )
     if snap_bars:
         segments = snap_to_bars(segments, feats.beat_times, feats.downbeat_indices)
@@ -184,7 +186,7 @@ def analyze_audio(
         segments=segments,
         beat_times=[float(t) for t in feats.beat_times],
         downbeats=[float(t) for t in downbeat_times],
-        beats_per_bar=beats_per_bar,
+        beats_per_bar=resolved_beats_per_bar,
         recognizers=[p.name for p in predictions],
         origin="audio",
         execution={"beat_tracker": feats.beat_source, "separated": feats.separated,
