@@ -1,0 +1,5 @@
+# 개인 전용 선택 공급 계층. CPU 분석 환경과 분리한다.
+yt-dlp[default]==2026.10.26
+yt-dlp-ejs==0.8.0
+imageio-ffmpeg==0.6.0
+deno==2.9.8

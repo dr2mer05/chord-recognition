@@ -24,6 +24,49 @@ beat_this·Demucs·외부 인식기는 기본 설치에 포함하지 않았습�
 
 ## YouTube 링크로 분석하기
 
+개인 전용 자동 분석과 별도 음원 연결의 두 경로를 제공합니다. 별도 음원이 등록된 영상은
+그 연결을 우선 사용합니다. 해제·만료된 연결은 자동 다운로드로 대체하지 않습니다.
+
+### 개인 전용 자동 분석
+
+개인 Codespaces에서는 시작 스크립트가 포트 8000을 **Private**로 설정한 다음 자동 분석을
+활성화합니다. 기존 Codespace를 업데이트할 때는 다음을 실행하세요.
+
+```bash
+git pull --ff-only origin feat/authorized-audio-sources
+bash scripts/setup-dev.sh
+bash scripts/start-dev.sh --restart
+```
+
+사이트를 새로고침하고 영상 링크를 입력한 뒤 **분석**을 누릅니다. 검색은 별도로
+`YOUTUBE_API_KEY`가 필요하지만 링크 입력에는 필요하지 않습니다.
+이 경로는 `yt-dlp`와 FFmpeg·Deno·설치된 EJS 패키지를 사용하며 분석 엔진은 기존과 같습니다.
+로컬 환경은 `requirements-private.txt`를 설치하고 `.env`에 다음 두 값을 설정한 뒤 서버를 재시작합니다.
+
+```dotenv
+CHORDAPP_PRIVATE_MODE=1
+CHORDAPP_ENABLE_YTDLP=1
+```
+
+두 설정이 모두 켜져야 동작합니다. 앱 자체에는 로그인이 없으므로 개인 모드는
+비공개 포트 또는 본인만 접근 가능한 환경에서 사용하세요. 이 설정 자체가 접근 제어를 제공하지는 않습니다.
+개인 이용만으로 다운로드 권한이나 YouTube 약관의 예외가 부여되는 것은 아닙니다.
+향후 공개 서비스의 음원 공급 경로는 별도로 검토해야 합니다.
+
+음원은 요청마다 독립적인 임시 폴더에 받아 **분석 성공·실패 후 삭제**하며 다운로드 API는 제공하지 않습니다.
+정상 처리와 시간 초과 시 자식 FFmpeg 프로세스도 정리합니다. 서버 강제 종료나 머신 중단 시에는
+잔여 임시 파일이 남을 수 있으므로 `work/private-youtube/`를 삭제할 수 있습니다.
+분석 결과와 음원 해시를 24시간 동안 재사용해 같은 옵션으로 다시 열 때 다운로드를 생략합니다.
+교정은 영상 ID와 음원 해시에 연결하며 원본 인식 결과와 별도로 보존합니다.
+템포·박자·분석 옵션·엔진 환경을 변경하거나 캐시가 만료되면 음원을 다시 받아 분석할 수 있습니다.
+음원을 보관하지 않으므로 이 경로의 결과는 원본 음원이 필요한 실제 곡 벤치마크에 바로 사용하지 못합니다.
+
+라이브·15분 초과 영상은 지원하지 않습니다. YouTube의 접근 제한·연결 변경이나 네트워크 차단으로
+실패할 수 있으며 모든 영상의 이용 가능성을 보장하지 않습니다. 기본 플레이어 클라이언트를 강제 교체하거나
+쿠키·프록시 순환 등 추가 우회 로직은 넣지 않았습니다.
+
+### 별도 음원 연결
+
 1. YouTube 탭에 영상 링크를 입력합니다. 검색을 쓰려면 `YOUTUBE_API_KEY`를 설정합니다.
 2. 연결된 음원이 없다면 **사용 권한이 있는 음원 연결 · 변경**을 엽니다.
 3. 직접 녹음했거나 권리자가 분석·보관을 허락한 별도 원본을 선택하고 권한 근거를 기록합니다.
@@ -40,15 +83,15 @@ beat_this·Demucs·외부 인식기는 기본 설치에 포함하지 않았습�
 이번 버전에는 일반 상용 음원 공급 카탈로그가 없습니다.
 
 YouTube Data API와 oEmbed는 영상 정보를, 공식 IFrame 플레이어는 영상 재생을 담당합니다.
-**YouTube 오디오 추출은 구현 경로에서 제거했습니다.** 이전 `CHORDAPP_ENABLE_YTDLP` 플래그도 동작하지 않습니다.
-개인·비상업 용도라는 이유만으로 YouTube 다운로드가 허용된다고 가정하지 않습니다.
+선택적인 개인 자동 분석은 공식 Data API가 아닌 별도 공급 모듈이며, 공식 API의 오디오 제공 기능이 아닙니다.
 
 - [YouTube 이용약관](https://www.youtube.com/t/terms)
 - [YouTube 개발자 정책](https://developers.google.com/youtube/terms/developer-policies)
 - [Google 개인정보처리방침](https://policies.google.com/privacy)
 
-영상 정보·플레이어를 불러올 때 YouTube에 요청이 전송됩니다. 원본 음원은 이 서버에 보관하고
-YouTube에 업로드하지 않습니다. 별도 음원의 분석 결과는 YouTube가 제공한 정보가 아닙니다.
+영상 정보·플레이어·개인 자동 분석을 사용할 때 YouTube에 요청이 전송됩니다.
+별도로 등록한 원본 음원은 이 서버에 보관하고 YouTube에 업로드하지 않습니다.
+앱의 분석 결과는 YouTube가 제공한 정보가 아닙니다.
 
 ## 저장·교정·재열람
 
@@ -56,6 +99,7 @@ YouTube에 업로드하지 않습니다. 별도 음원의 분석 결과는 YouTu
 - `data/audio_sources.sqlite3`: 영상 연결, 권한 근거·기한, 버전·시차.
 - `data/cache.sqlite3`: 원본 분석과 별도 영상 메타데이터 캐시.
 - `data/corrections.sqlite3`: 사용자 교정·템포·박자 지정.
+- `work/private-youtube/`: 개인 자동 분석의 요청별 임시 파일. 요청 종료 시 삭제.
 
 동일 음원·연결 버전·분석 옵션·설치 환경에서는 원본 분석을 재사용합니다.
 실제 추적기나 소스 분리가 폴백한 결과는 선호 엔진의 정상 결과로 캐시하지 않습니다.
@@ -79,13 +123,15 @@ YouTube 메타데이터는 분석과 분리해 24시간 뒤 갱신합니다. 제
 | `POST /api/audio-sources` | 음원과 권한·영상 연결 등록 (multipart) |
 | `GET /api/audio-sources` | 연결한 음원 목록 |
 | `DELETE /api/audio-sources/{video_id}` | 연결 사용 해제 |
-| `POST /api/youtube` | 연결 음원으로 분석·캐시 조회 |
+| `POST /api/youtube` | 연결 음원 또는 개인 자동 분석·캐시 조회 |
 | `POST /api/analyze` | 로컬 파일 분석 |
 | `POST /api/corrections` | 원본과 별도로 교정 저장 |
 
 연결이 없거나 기한 만료·해제·동일 녹음 미확인·파일 유실·내용 변경 시
 `/api/youtube`는 HTTP 409와 `detail.code`, `detail.message`를 반환합니다.
 API 문서는 실행 후 `/docs`에서 확인할 수 있습니다.
+개인 공급 경로의 연결 실패·지원 불가·잘못된 음원은 HTTP 502, 시간 초과는 504,
+필수 도구 누락은 503으로 안내하며 `detail.code`와 `detail.message`를 제공합니다.
 
 ## 검증과 알려진 한계
 
@@ -135,7 +181,7 @@ GitHub에 이 변경이 반영된 브랜치에서 다음 순서로 시작합니�
 2. 최초 의존성 설치가 끝나면 앱이 자동 실행됩니다. 이미 만든 Codespace는 컨테이너를 재빌드해야 설정이 적용됩니다.
 3. **Ports → 8000 → Open in Browser**를 엽니다. 포트 공개 범위는 **Private**로 유지합니다.
 4. 같은 GitHub 계정으로 로그인한 iPad·휴대폰에서 그 HTTPS 주소를 엽니다.
-5. 먼저 합성 데모로 화면·터치 교정을 확인하고, 권한이 있는 원본 음원을 연결해 검증합니다.
+5. 합성 데모로 화면·터치 교정을 확인한 뒤, 개인 링크 분석 또는 별도 원본 음원 연결을 검증합니다.
 6. 검증을 마치면 GitHub의 Codespaces 목록에서 **Stop codespace**로 실행을 중지합니다.
 
 시작 스크립트는 Codespaces에서 `gh codespace ports visibility 8000:private`를 실행하고,

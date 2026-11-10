@@ -9,6 +9,36 @@ mkdir -p work
 # 기존 Codespace에서 포트 공개 설정이 바뀌었어도 개인 검증 서버는 비공개로 시작한다.
 if [[ "${CODESPACES:-}" == "true" ]]; then
   gh codespace ports visibility 8000:private -c "$CODESPACE_NAME"
+  # 사용자가 승인한 개인 Codespaces 실행 경로. 포트 비공개 확인 후에만 활성화한다.
+  export CHORDAPP_PRIVATE_MODE=1
+  export CHORDAPP_ENABLE_YTDLP=1
+fi
+# --restart는 이 스크립트가 기록한 같은 작업 폴더의 서버만 종료한다.
+if [[ "${1:-}" == "--restart" && -f work/dev-server.pid ]]; then
+  .venv/bin/python - <<'PY'
+import os
+from pathlib import Path
+import signal
+import time
+pid = int(Path('work/dev-server.pid').read_text().strip())
+proc = Path('/proc') / str(pid)
+if proc.exists():
+    args = (proc / 'cmdline').read_bytes().split(b'\0')
+    if (proc / 'cwd').resolve() != Path.cwd() or b'chordapp' not in args or b'serve' not in args:
+        raise SystemExit('기록된 PID가 이 프로젝트의 서버가 아닙니다. 자동 종료하지 않았습니다.')
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(40):
+        try:
+            stopped = (proc / 'stat').read_text().split()[2] == 'Z'
+        except FileNotFoundError:
+            stopped = True
+        if stopped:
+            break
+        time.sleep(.25)
+    else:
+        raise SystemExit('서버가 종료되지 않았습니다. 터미널에서 상태를 확인해 주세요.')
+Path('work/dev-server.pid').unlink(missing_ok=True)
+PY
 fi
 # PID 파일 대신 로컬 health 응답으로 이미 실행 중인 앱을 확인한다.
 if .venv/bin/python - <<'PY'

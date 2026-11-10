@@ -295,7 +295,8 @@ def test_api_rejects_overlong_audio(client):
     assert response.status_code == 400
 
 
-def test_old_extraction_flag_cannot_enable_audio_download(client, monkeypatch):
+def test_extraction_flag_alone_cannot_enable_audio_download(client, monkeypatch):
+    monkeypatch.delenv("CHORDAPP_PRIVATE_MODE", raising=False)
     monkeypatch.setenv("CHORDAPP_ENABLE_YTDLP", "1")
     assert client.get("/api/capabilities").json()["youtube_audio"] is False
     assert client.post("/api/youtube", json={"url": VID}).json()["detail"]["code"] == "source_missing"

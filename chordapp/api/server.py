@@ -26,6 +26,7 @@ from ..service.youtube import (
     parse_video_id,
 )
 from ..service.audio_sources import AudioSourceUnavailable
+from ..service.private_youtube import PrivateYouTubeError
 from ..theory.chord import Chord
 from ..theory.key import Key
 from ..theory.substitution import suggest
@@ -100,8 +101,9 @@ def _capabilities() -> dict:
     return {
         "youtube_search": bool(getattr(service.search_backend, "available", False)),
         "audio_source_registration": True,
-        "youtube_audio": False,
-        "youtube_audio_reason": "영상별로 권한이 확인된 별도 음원을 연결해 분석합니다. YouTube에서 음원을 추출하지 않습니다.",
+        "youtube_audio": service.private_youtube.available,
+        "youtube_audio_reason": service.private_youtube.reason,
+        "private_mode": service.private_youtube.enabled,
         "env_file": str(PROJECT_ROOT / ENV_FILENAME),
     }
 
@@ -119,7 +121,7 @@ def audio_sources() -> dict:
 @app.get("/api/youtube/source")
 def youtube_source(url: str = Query(...)) -> dict:
     try:
-        status = service.audio_sources.status(url)
+        status = service.youtube_source_status(url)
         info = service.video_metadata(status["video_id"])
         status["video"] = info.to_dict() if info else {"video_id": status["video_id"]}
         return status
@@ -215,6 +217,9 @@ def analyze_youtube(req: YouTubeRequest) -> JSONResponse:
         raise HTTPException(400, str(exc))
     except AudioSourceUnavailable as exc:
         raise HTTPException(409, {"code": exc.code, "message": str(exc)})
+    except PrivateYouTubeError as exc:
+        code = 503 if exc.code in {"private_mode_disabled", "dependency_missing"} else 504 if exc.code == "download_timeout" else 502
+        raise HTTPException(code, {"code": exc.code, "message": str(exc)})
     except YouTubeError as exc:
         raise HTTPException(502, str(exc))
     except ValueError as exc:

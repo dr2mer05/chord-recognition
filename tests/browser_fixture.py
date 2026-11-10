@@ -22,6 +22,30 @@ if __name__ == "__main__":
                 return VideoInfo(video_id, title="합성 검증 음원", channel="테스트 전용")
 
         service.search_backend = FixtureSearch()
+        if os.environ.get("CHORDAPP_TEST_PRIVATE") == "1":
+            # 공급 네트워크만 합성 음원으로 대체하고 분석·API·화면은 실제 코드로 실행한다.
+            from contextlib import contextmanager
+            from chordapp.tools.synth import generate_all
+            from chordapp.service.private_youtube import PrivateYouTubeProvider
+            import shutil
+
+            demo = generate_all(Path("fixture-audio"))[0]
+
+            class FixturePrivateProvider(PrivateYouTubeProvider):
+                @property
+                def enabled(self): return True
+                @property
+                def available(self): return True
+                @property
+                def reason(self): return "합성 음원을 이용한 개인 링크 경로 검증"
+                @contextmanager
+                def audio(self, video):
+                    with tempfile.TemporaryDirectory(dir=".") as folder:
+                        path = Path(folder) / "audio.wav"
+                        shutil.copyfile(demo, path)
+                        yield path
+
+            service.private_youtube = FixturePrivateProvider()
         meter = os.environ.get("CHORDAPP_TEST_METER")
         if meter:
             import numpy as np
@@ -41,4 +65,4 @@ if __name__ == "__main__":
             tracker = FixtureTracker()
             audio.default_tracker = lambda: tracker
             beat_tracker.default_tracker = lambda: tracker
-        uvicorn.run(app, host="127.0.0.1", port=8765)
+        uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("CHORDAPP_TEST_PORT", "8765")))

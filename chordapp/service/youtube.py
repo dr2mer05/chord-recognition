@@ -1,4 +1,4 @@
-"""공식 YouTube 검색·메타데이터와 URL 처리. 음원 공급은 audio_sources에서 담당한다."""
+"""공식 YouTube 검색·메타데이터와 URL 처리. 음원 공급 모듈과 분리한다."""
 
 from __future__ import annotations
 

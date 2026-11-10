@@ -115,7 +115,8 @@ def cmd_config(args: argparse.Namespace) -> int:
     print(f"\n  YOUTUBE_API_KEY       {key_state}")
     print(f"  → 유튜브 검색:        {'사용 가능' if info['youtube_api_key_set'] else '비활성'}")
 
-    print("\n  YouTube 음원: 권한이 확인된 별도 음원을 웹에서 한 번 연결해 사용")
+    from .service.private_youtube import PrivateYouTubeProvider
+    print(f"\n  개인 링크 분석: {PrivateYouTubeProvider().reason}")
     from .analysis.separation import ENABLE_ENV, default_separator
 
     sep = default_separator().status()

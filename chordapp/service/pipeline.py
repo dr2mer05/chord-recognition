@@ -18,6 +18,7 @@ from .cache import AnalysisCache, file_fingerprint
 from .chord_db import ChordDatabase, NullDatabase
 from .corrections import CorrectionStore, apply_corrections
 from .audio_sources import AudioSourceStore
+from .private_youtube import PrivateYouTubeProvider
 from .youtube import (
     VideoInfo,
     VideoSearch,
@@ -42,6 +43,7 @@ class ChordService:
         search: Optional[VideoSearch] = None,
         audio_sources: Optional[AudioSourceStore] = None,
         corrections: Optional[CorrectionStore] = None,
+        private_youtube: Optional[PrivateYouTubeProvider] = None,
     ):
         self.cache = cache or AnalysisCache()
         self.database = database or NullDatabase()
@@ -50,6 +52,7 @@ class ChordService:
         self.search_backend = search or default_search()
         self.audio_sources = audio_sources or AudioSourceStore()
         self.corrections = corrections or CorrectionStore()
+        self.private_youtube = private_youtube or PrivateYouTubeProvider()
 
     # -- 사용자 교정 ----------------------------------------------------
     def corrected_result(self, result: AnalysisResult) -> AnalysisResult:
@@ -95,20 +98,66 @@ class ChordService:
         max_seconds: Optional[float] = None,
         use_cache: bool = True,
     ) -> Tuple[AnalysisResult, Optional[VideoInfo]]:
-        """허용된 별도 음원 연결 → 원본 분석 캐시 → 분석. 권한은 HIT 전에도 확인한다."""
+        """별도 음원을 우선하고, 개인 모드에서는 미등록 영상의 자동 공급을 허용한다."""
         video_id = parse_video_id(url_or_id)
-        link = self.audio_sources.resolve(video_id)
-        result = self.analyze_file(
-            link.path, key_override=key_override, vocabulary=vocabulary,
-            detect_inversions=detect_inversions, separate=separate,
-            max_seconds=max_seconds, use_cache=use_cache, source_key=link.source_key,
-        )
+        if self.audio_sources.get(video_id) is None and self.private_youtube.enabled:
+            result = self._analyze_private_youtube(video_id, key_override, vocabulary,
+                detect_inversions, separate, max_seconds, use_cache)
+            label = video_id
+        else:
+            # 해제·만료된 명시적 연결은 다운로드로 우회하지 않는다.
+            link = self.audio_sources.resolve(video_id)
+            result = self.analyze_file(
+                link.path, key_override=key_override, vocabulary=vocabulary,
+                detect_inversions=detect_inversions, separate=separate,
+                max_seconds=max_seconds, use_cache=use_cache, source_key=link.source_key,
+            )
+            result.audio_link = link.to_dict()
+            label = link.label
         # 영상 메타데이터는 분석 결과와 별도 캐시·만료 주기를 가진다.
         info = self.video_metadata(video_id)
-        result.source = info.title if info and info.title else link.label
-        result.audio_link = link.to_dict()
+        result.source = info.title if info and info.title else label
         self._register(result)
         return result, info
+
+    def youtube_source_status(self, video):
+        status = self.audio_sources.status(video)
+        if status["status"] == "source_missing" and self.private_youtube.enabled:
+            status.update(status="ready" if self.private_youtube.available else "dependency_missing",
+                          message=self.private_youtube.reason, provider="yt-dlp")
+        return status
+
+    def _analyze_private_youtube(self, video_id, key_override, vocabulary,
+                                 detect_inversions, separate, max_seconds, use_cache):
+        from ..analysis.runtime import cacheable_execution
+
+        self.private_youtube.ensure_available()
+        # 음원은 즉시 삭제하고 24시간 동안 파일 식별자와 분석 결과만 재사용한다.
+        manifest_key = self.cache.make_key("private_youtube_asset", video_id)
+        manifest = self.cache.get(manifest_key, max_age=86400) if use_cache else None
+        def cache_key(source_key):
+            return self.cache.make_key("private_youtube", video_id,
+                **self._audio_options(source_key, key_override, vocabulary,
+                                      detect_inversions, separate, max_seconds))
+        if manifest:
+            hit = self.cache.get(cache_key(manifest["source_key"]), max_age=86400)
+            if hit is not None:
+                result = AnalysisResult.from_dict(hit)
+                result.cached = True
+                return result
+        with self.private_youtube.audio(video_id) as path:
+            asset_id = AudioSourceStore.fingerprint(path)
+            source_key = f"private-youtube:{video_id}:{asset_id}"
+            result = self.analyze_file(path, key_override=key_override, vocabulary=vocabulary,
+                detect_inversions=detect_inversions, separate=separate,
+                max_seconds=max_seconds, use_cache=False, source_key=source_key)
+        result.audio_path = ""
+        result.audio_link = {"video_id": video_id, "provider": "yt-dlp", "video_offset": 0}
+        if use_cache:
+            self.cache.put(manifest_key, "private_youtube_asset", {"source_key": source_key})
+            if cacheable_execution(result.execution["environment"], result.execution):
+                self.cache.put(cache_key(source_key), "private_youtube", result.to_dict())
+        return result
 
     def video_metadata(self, video_id: str) -> Optional[VideoInfo]:
         cache_key = self.cache.make_key("video_metadata", video_id)
@@ -137,27 +186,12 @@ class ChordService:
         vocab = vocabulary or self.vocabulary
         fingerprint = file_fingerprint(path)
         key_ = source_key or f"file:{fingerprint}"
-        tempo_override = self.corrections.tempo(key_)
-        beats_per_bar = self.corrections.beats_per_bar(key_)
-        downbeat_offset = self.corrections.downbeat_offset(key_)
-        beat_offset = self.corrections.beat_offset(key_)
-        options: Dict[str, Any] = {
-            "vocabulary": vocab,
-            "key": key_override,
-            "inversions": detect_inversions,
-            "max_seconds": max_seconds,
-            # 분리 여부로 결과가 달라지므로 캐시를 분리해야 한다
-            "separate": self._separation_setting(separate),
-            # 템포·박자를 지정하면 격자가 통째로 달라진다
-            "tempo": tempo_override,
-            "meter": (beats_per_bar, downbeat_offset, beat_offset),
-            # 분석 로직이 바뀌면 옛 결과를 그대로 쓰면 안 된다
-            "algo": ANALYSIS_VERSION,
-        }
-        from ..analysis.runtime import runtime_identity, cacheable_execution
-        identity = runtime_identity(vocab, options["separate"], tempo_override)
-        options["runtime"] = identity
-        options["source_key"] = key_
+        options = self._audio_options(key_, key_override, vocabulary,
+                                      detect_inversions, separate, max_seconds)
+        identity = options["runtime"]
+        tempo_override = options["tempo"]
+        beats_per_bar, downbeat_offset, beat_offset = options["meter"]
+        from ..analysis.runtime import cacheable_execution
         cache_key = self.cache.make_key(NAMESPACE_AUDIO, fingerprint, **options)
 
         if use_cache:
@@ -189,12 +223,37 @@ class ChordService:
         )
         result.source = path.name
         result.source_key = key_
-        result.audio_path = str(path.resolve())
+        result.audio_path = "" if key_.startswith("private-youtube:") else str(path.resolve())
         result.execution["environment"] = identity
         if use_cache and cacheable_execution(identity, result.execution):
             self.cache.put(cache_key, NAMESPACE_AUDIO, result.to_dict())
         self._register(result)
         return result
+
+    def _audio_options(self, key_, key_override, vocabulary, detect_inversions, separate, max_seconds):
+        vocab = vocabulary or self.vocabulary
+        tempo_override = self.corrections.tempo(key_)
+        beats_per_bar = self.corrections.beats_per_bar(key_)
+        downbeat_offset = self.corrections.downbeat_offset(key_)
+        beat_offset = self.corrections.beat_offset(key_)
+        options: Dict[str, Any] = {
+            "vocabulary": vocab,
+            "key": key_override,
+            "inversions": detect_inversions,
+            "max_seconds": max_seconds,
+            # 분리 여부로 결과가 달라지므로 캐시를 분리해야 한다
+            "separate": self._separation_setting(separate),
+            # 템포·박자를 지정하면 격자가 통째로 달라진다
+            "tempo": tempo_override,
+            "meter": (beats_per_bar, downbeat_offset, beat_offset),
+            # 분석 로직이 바뀌면 옛 결과를 그대로 쓰면 안 된다
+            "algo": ANALYSIS_VERSION,
+        }
+        from ..analysis.runtime import runtime_identity
+        identity = runtime_identity(vocab, options["separate"], tempo_override)
+        options["runtime"] = identity
+        options["source_key"] = key_
+        return options
 
     def _register(self, result: AnalysisResult) -> None:
         """교정을 붙일 수 있도록 곡을 등록한다. 오디오 경로는 벤치마크 재분석에 쓴다."""

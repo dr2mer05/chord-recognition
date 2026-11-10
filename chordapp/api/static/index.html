@@ -171,7 +171,7 @@
 <body>
 <header>
   <h1>Chord Analysis Lab</h1>
-  <p>YouTube 영상에 연결한 음원으로 코드 진행과 화성을 분석합니다</p>
+  <p>YouTube 링크 또는 음원으로 코드 진행과 화성을 분석합니다</p>
 </header>
 
 <main>
@@ -405,7 +405,9 @@ fetch('/api/capabilities').then(r => r.json()).then(c => {
     $('q').disabled = true;
     $('q').placeholder = '검색이 설정되지 않았습니다. 아래에 영상 링크를 입력해 주세요.';
   }
-  $('caps').innerHTML = '<p class="hint">YouTube는 검색·영상 재생에 사용합니다. 코드 분석은 연결된 별도 음원으로 수행합니다.</p>';
+  $('caps').textContent = c.private_mode
+    ? c.youtube_audio_reason
+    : 'YouTube는 검색·영상 재생에 사용합니다. 코드 분석은 연결된 별도 음원으로 수행합니다.';
 }).catch(() => {});
 
 /* ---------- 데모 ---------- */
@@ -556,17 +558,17 @@ async function analyzeYouTube() {
   clearAnalysis();
   $('doYt').disabled = true;
   $('registerSource').disabled = true;
-  setText('ytStatus', '<span class="spin"></span> 연결된 음원 확인 중…');
+  setText('ytStatus', '<span class="spin"></span> 분석 경로 확인 중…');
   const t0 = performance.now();
   try {
     const source = await getJSON('/api/youtube/source?url=' + encodeURIComponent(url));
     showSourceStatus(source);
     if (source.status !== 'ready') {
-      $('sourceForm').open = true;
+      $('sourceForm').open = source.provider !== 'yt-dlp';
       setText('ytStatus', esc(source.message), true);
       return;
     }
-    setText('ytStatus', '<span class="spin"></span> 분석 중…');
+    setText('ytStatus', '<span class="spin"></span> 음원 연결·분석 중… 곡 길이에 따라 몇 분 걸릴 수 있습니다.');
     const options = {url, key: $('ytkey').value.trim() || null, vocabulary: 'standard', limit: 6};
     const data = await postJSON('/api/youtube', options);
     // 입력칸을 바꿔도 교정 후에는 현재 결과의 영상을 다시 연다.
@@ -676,7 +678,9 @@ function render(data, elapsed) {
   teardownPlayer();
   state.videoId = data.video ? data.video.video_id : null;
   state.videoOffset = data.audio_link ? data.audio_link.video_offset : 0;
-  $('analysisOrigin').textContent = data.audio_link ? '연결된 별도 음원의 분석 결과입니다. YouTube에서 제공한 분석이 아닙니다.' : '';
+  $('analysisOrigin').textContent = data.audio_link?.provider === 'yt-dlp'
+    ? '개인 전용 자동 분석 결과입니다. 분석에 사용한 음원은 삭제되었습니다.'
+    : data.audio_link ? '연결된 별도 음원의 분석 결과입니다. YouTube에서 제공한 분석이 아닙니다.' : '';
   $('playerStatus').textContent = '';
   if (data.video && data.video.video_id) {
     mountYouTube(data.video.video_id);

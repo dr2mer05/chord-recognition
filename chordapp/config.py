@@ -60,6 +60,7 @@ def ensure_loaded() -> None:
 def status() -> Dict[str, object]:
     """설정이 어떻게 잡혀 있는지. 값은 절대 노출하지 않는다."""
     from .service.youtube import API_KEY_ENV
+    from .service.private_youtube import PrivateYouTubeProvider
 
     key = os.environ.get(API_KEY_ENV, "")
     return {
@@ -67,5 +68,5 @@ def status() -> Dict[str, object]:
         "env_file_exists": (PROJECT_ROOT / ENV_FILENAME).is_file(),
         "youtube_api_key_set": bool(key),
         "youtube_api_key_hint": f"…{key[-4:]}" if len(key) >= 4 else "",
-        "ytdlp_enabled": False,  # 기존 플래그는 더 이상 동작하지 않는다.
+        "ytdlp_enabled": PrivateYouTubeProvider().enabled,
     }
