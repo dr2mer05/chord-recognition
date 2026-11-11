@@ -22,6 +22,25 @@ if __name__ == "__main__":
                 return VideoInfo(video_id, title="합성 검증 음원", channel="테스트 전용")
 
         service.search_backend = FixtureSearch()
+        if os.environ.get("CHORDAPP_TEST_SEARCH") == "1":
+            import chordapp.config as config
+            from chordapp.service.youtube import DataApiSearch, SearchUnavailable
+            config.PROJECT_ROOT = Path.cwd()  # 테스트 키는 임시 작업 폴더에만 저장한다.
+            os.environ["CHORDAPP_PRIVATE_MODE"] = "1"
+            os.environ["YOUTUBE_API_KEY"] = ""
+
+            def fixture_get(self, endpoint, params):
+                if self.api_key != "AIza" + "x" * 35:
+                    raise SearchUnavailable("API 키를 확인해 주세요.", "invalid_api_key")
+                if endpoint == "search":
+                    return {"items": [{"id": {"videoId": "PrivateTest"}}]}
+                if params.get("part") == "id":
+                    return {"items": []}
+                return {"items": [{"id": "PrivateTest", "snippet": {"title": "검색 검증 곡 <테스트>",
+                    "channelTitle": "합성 검증", "thumbnails": {}}, "contentDetails": {"duration": "PT31S"}}]}
+
+            DataApiSearch._get = fixture_get
+            service.search_backend = DataApiSearch()
         if os.environ.get("CHORDAPP_TEST_PRIVATE") == "1":
             # 공급 네트워크만 합성 음원으로 대체하고 분석·API·화면은 실제 코드로 실행한다.
             from contextlib import contextmanager

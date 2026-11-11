@@ -33,7 +33,9 @@ class InvalidVideoUrl(YouTubeError):
 
 
 class SearchUnavailable(YouTubeError):
-    pass
+    def __init__(self, message: str, code: str = "search_unavailable"):
+        super().__init__(message)
+        self.code = code
 
 
 # --------------------------------------------------------------------------
@@ -192,10 +194,30 @@ class DataApiSearch:
             with urllib.request.urlopen(url, timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:200]
-            raise SearchUnavailable(f"YouTube API 오류 {exc.code}: {detail}") from exc
-        except urllib.error.URLError as exc:
-            raise SearchUnavailable(f"YouTube API에 접속할 수 없다: {exc.reason}") from exc
+            # Google의 원문 오류나 요청 URL에 키가 포함될 수 있어 반환하지 않는다.
+            try:
+                detail = json.loads(exc.read().decode("utf-8", "replace"))
+                reasons = {entry.get("reason", "") for entry in detail.get("error", {}).get("errors", [])}
+                reasons.update(entry.get("reason", "") for entry in detail.get("error", {}).get("details", []))
+            except (ValueError, AttributeError, TypeError):
+                reasons = set()
+            if reasons & {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"} or exc.code == 429:
+                code, message = "quota_exceeded", "YouTube 검색 할당량을 초과했습니다. Google Cloud의 할당량을 확인하거나 나중에 다시 시도해 주세요."
+            elif reasons & {"accessNotConfigured", "SERVICE_DISABLED"}:
+                code, message = "api_not_enabled", "이 키의 프로젝트에서 YouTube Data API v3를 사용 설정해 주세요."
+            elif exc.code == 400:
+                code, message = "invalid_api_key", "API 키를 확인해 주세요. 키 전체를 공백 없이 입력해야 합니다."
+            elif exc.code == 403:
+                code, message = "key_restricted", "API 키의 제한 설정을 확인해 주세요. 서버 요청에 YouTube Data API v3 사용이 허용되어야 합니다."
+            else:
+                code, message = "api_error", f"YouTube 검색 서버가 오류를 반환했습니다 ({exc.code}). 잠시 후 다시 시도해 주세요."
+            raise SearchUnavailable(message, code) from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise SearchUnavailable("서버에서 YouTube Data API에 연결하지 못했습니다. 네트워크 상태를 확인해 주세요.", "network_error") from None
+
+    def validate(self) -> None:
+        """검색 할당량을 쓰지 않고 videos.list 요청으로 키·API 사용 설정을 확인한다."""
+        self._get("videos", {"part": "id", "id": "BaW_jenozKc"})
 
     def search(self, query: str, limit: int = 8) -> List[VideoInfo]:
         if not self.available:
@@ -295,5 +317,5 @@ def _parse_iso8601_duration(text: str) -> Optional[float]:
 
 
 def default_search() -> VideoSearch:
-    api = DataApiSearch()
-    return api if api.available else DisabledSearch()
+    # 웹에서 키를 저장하면 서버 재시작 없이 available이 바뀐다.
+    return DataApiSearch()

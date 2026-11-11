@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ "${CODESPACES:-}" == "true" && -z "${1:-}" ]]; then
+  exec bash scripts/resume-dev.sh
+fi
 if [[ ! -x .venv/bin/python ]]; then
   printf '먼저 bash scripts/setup-dev.sh를 실행해 주세요.\n' >&2
   exit 1

@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -55,6 +57,35 @@ def ensure_loaded() -> None:
     """한 번만 로드. import 시점에 호출된다."""
     if not _loaded:
         load_env()
+
+
+def validate_youtube_key(key: str) -> str:
+    key = key.strip()
+    if not re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", key):
+        raise ValueError("AIza로 시작하는 API 키 전체를 입력해 주세요.")
+    return key
+
+
+def save_youtube_key(key: str) -> None:
+    """서버의 무시된 .env에 원자적으로 저장한다. 키를 반환하거나 로그에 남기지 않는다."""
+    key = validate_youtube_key(key)
+    target = PROJECT_ROOT / ENV_FILENAME
+    if target.is_symlink():
+        raise ValueError("설정 파일이 심볼릭 링크여서 웹에서 변경할 수 없습니다.")
+    old = target.read_text(encoding="utf-8") if target.exists() else ""
+    lines = [line for line in old.splitlines() if not re.match(r"^\s*YOUTUBE_API_KEY\s*=", line)]
+    text = "\n".join(lines + ["YOUTUBE_API_KEY=" + key]) + "\n"
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=PROJECT_ROOT,
+                                     prefix=".env-key-", suffix=".tmp", delete=False) as stream:
+        staged = Path(stream.name)
+        try:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+            staged.replace(target)
+        finally:
+            staged.unlink(missing_ok=True)
+    os.environ["YOUTUBE_API_KEY"] = key
 
 
 def status() -> Dict[str, object]:

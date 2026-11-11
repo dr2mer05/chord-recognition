@@ -1,5 +1,6 @@
 # API 키. 절대 커밋하지 말 것.
 .env
+.env-key-*.tmp
 
 __pycache__/
 *.py[cod]

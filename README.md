@@ -22,6 +22,35 @@ python -m chordapp serve
 beat_this·Demucs·외부 인식기는 기본 설치에 포함하지 않았습니다. 필요할 때
 `requirements-models.txt`를 검토하고 설치하세요. 모델을 설치하면 사용하는 엔진과 비용·결과가 달라집니다.
 
+## iPad에서 검색 설정하기
+
+기본 검색 API는 서버에서 Google에 요청합니다. 개인 모드로 사이트를 연 뒤 **검색 설정**을 눌러
+YouTube Data API 키를 입력하고 **연결 확인 · 저장**을 선택하세요. 연결을 확인한 키만 저장하며
+서버 재시작 없이 검색창이 활성화됩니다. 저장한 키는 화면에 다시 표시하지 않습니다.
+키는 저장소에서 제외한 서버의 `.env`에 소유자만 읽고 쓸 수 있는 권한으로 기록합니다.
+다른 설정·주석은 보존하며, 연결 또는 저장 실패 시 기존 키를 유지합니다.
+
+키 발급은 본인의 Google 계정으로 다음 순서로 한 번 진행합니다.
+
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 프로젝트를 만듭니다.
+2. [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com)를 사용 설정합니다.
+3. [사용자 인증 정보](https://console.cloud.google.com/apis/credentials)에서 **API 키**를 만듭니다. 공개 영상 검색에는 OAuth 동의 화면이 필요하지 않습니다.
+4. API 제한사항을 **YouTube Data API v3**로 설정합니다. 서버에서 요청하므로 웹사이트 HTTP referrer 제한은 맞지 않습니다. Codespaces의 외부 IP는 고정되지 않을 수 있습니다.
+5. 키를 채팅이나 코드에 보내지 말고, 사이트 설정란에 붙여넣습니다.
+
+현재 공식 기본 검색 할당량은 하루 100회입니다. 콘솔의 실제 할당량이 기준이며 추가 할당량이나
+유료 서비스는 자동 신청하지 않습니다. 같은 검색은 1시간 재사용하고, 검색 결과 메타데이터도
+1시간 뒤 캐시에서 정리해 불필요한 요청을 줄입니다. 키 연결 확인은 검색 대신 `videos.list`를 사용합니다.
+키가 잘못되었거나 API 미사용 설정·키 제한·할당량·네트워크 오류가 있으면 원인별 안내를 표시합니다.
+
+**검색 설정 · 실행 상태**에서 실행 중인 앱 버전·검색 설정·개인 분석 도구·최근 오류를 볼 수 있습니다.
+**상태 복사**로 진단 정보만 공유할 수 있으며 키는 포함하지 않습니다. 복사가 안 되는 기기에서는
+이 화면의 스크린샷으로 상태를 전달할 수 있습니다. 서버 환경변수에 별도 키를 지정했다면 재시작 시
+그 값이 `.env`보다 우선한다는 기존 규칙은 유지됩니다.
+
+- [공식 인증 안내](https://developers.google.com/youtube/data/guides/authentication)
+- [공식 할당량 안내](https://developers.google.com/youtube/data/determine_quota_cost)
+
 ## YouTube 링크로 분석하기
 
 개인 전용 자동 분석과 별도 음원 연결의 두 경로를 제공합니다. 별도 음원이 등록된 영상은
@@ -37,6 +66,12 @@ git pull --ff-only origin feat/authorized-audio-sources
 bash scripts/setup-dev.sh
 bash scripts/start-dev.sh --restart
 ```
+
+이번 자동 시작 구성을 한 번 반영한 뒤에는 **Codespaces를 다시 시작할 때** 현재 브랜치를
+`git pull --ff-only`로 갱신합니다. 직접 수정했거나 미추적 파일이 있으면 자동 갱신을 건너뛰며,
+원격 접속·병합에 실패해도 사용자 작업을 지우지 않고 현재 버전으로 시작합니다.
+설치 목록이 바뀐 경우에만 의존성을 다시 설치합니다. 갱신 기록은 `work/auto-update.log`에 남습니다.
+화면 새로고침만으로 실행 중인 서버가 업데이트되지는 않습니다.
 
 사이트를 새로고침하고 영상 링크를 입력한 뒤 **분석**을 누릅니다. 검색은 별도로
 `YOUTUBE_API_KEY`가 필요하지만 링크 입력에는 필요하지 않습니다.
@@ -120,6 +155,8 @@ YouTube 메타데이터는 분석과 분리해 24시간 뒤 갱신합니다. 제
 | 경로 | 용도 |
 |---|---|
 | `GET /api/youtube/source?url=...` | 영상 정보·음원 연결 가능 상태 |
+| `GET/POST /api/settings/youtube` | 키 등록 여부 / 개인 모드에서 연결 확인 후 키 저장 |
+| `GET /api/diagnostics` | 키를 제외한 실행 버전·설정·최근 오류 |
 | `POST /api/audio-sources` | 음원과 권한·영상 연결 등록 (multipart) |
 | `GET /api/audio-sources` | 연결한 음원 목록 |
 | `DELETE /api/audio-sources/{video_id}` | 연결 사용 해제 |

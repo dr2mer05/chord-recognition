@@ -52,6 +52,8 @@ class AnalysisCache:
 
     @staticmethod
     def _expire_metadata(con: sqlite3.Connection) -> None:
+        con.execute("DELETE FROM analysis_cache WHERE namespace = 'video_search' AND created_at < ?",
+                    (time.time() - 60 * 60,))
         con.execute("DELETE FROM analysis_cache WHERE namespace = 'video_metadata' AND created_at < ?",
                     (time.time() - 24 * 60 * 60,))
 

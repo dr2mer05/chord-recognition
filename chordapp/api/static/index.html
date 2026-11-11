@@ -187,6 +187,7 @@
       <div class="row">
         <input id="q" class="grow" placeholder="곡 제목 또는 아티스트로 검색">
         <button class="primary" id="doSearch">검색</button>
+        <button id="openSettings">검색 설정</button>
         <span id="searchStatus" class="hint"></span>
       </div>
       <div class="row" style="margin-top:10px">
@@ -220,6 +221,23 @@
       <details style="margin-top:14px"><summary>연결한 음원 다시 열기</summary><div id="sourceLibrary" style="margin-top:8px"></div></details>
       <div class="results" id="results"></div>
     </div>
+
+    <details class="panel" id="searchSettings">
+      <summary>검색 설정 · 실행 상태</summary>
+      <p id="keyStatus" class="hint" role="status" aria-live="polite">설정을 확인하는 중…</p>
+      <div id="keyForm">
+        <label for="youtubeApiKey">YouTube Data API 키</label>
+        <div class="row" style="margin-top:8px">
+          <input class="grow" id="youtubeApiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="발급한 API 키 전체를 붙여넣으세요">
+          <button class="primary" id="saveApiKey">연결 확인 · 저장</button>
+        </div>
+        <p class="hint">키는 이 개인 서버에 저장합니다. 채팅으로 보내지 마세요. 이미 저장한 키는 다시 표시하지 않습니다.</p>
+      </div>
+      <p class="hint"><a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer">① YouTube Data API v3 사용 설정</a> · <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">② API 키 발급</a></p>
+      <p class="hint">API 제한사항은 YouTube Data API v3로 지정하세요. 서버 요청이므로 웹사이트 주소 제한을 적용한 키는 사용할 수 없습니다.</p>
+      <div class="row"><button id="refreshDiagnostics">실행 상태 확인</button><button id="copyDiagnostics">상태 복사</button></div>
+      <pre id="diagnostics" class="hint" style="white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px" role="status" aria-live="polite"></pre>
+    </details>
 
     <div class="panel">
       <h2>바로 보기 — 데모 음원</h2>
@@ -398,17 +416,57 @@ Object.keys(TABS).forEach(t => $(t).onclick = () => {
 });
 
 /* ---------- 기능 가용성 ---------- */
-fetch('/api/capabilities').then(r => r.json()).then(c => {
+function applyCapabilities(c) {
   state.caps = c;
-  if (!c.youtube_search) {
-    $('doSearch').disabled = true;
-    $('q').disabled = true;
-    $('q').placeholder = '검색이 설정되지 않았습니다. 아래에 영상 링크를 입력해 주세요.';
-  }
+  $('doSearch').disabled = !c.youtube_search;
+  $('q').disabled = !c.youtube_search;
+  $('q').placeholder = c.youtube_search ? '곡 제목 또는 아티스트로 검색' : '검색 설정에서 API 키를 등록해 주세요.';
   $('caps').textContent = c.private_mode
     ? c.youtube_audio_reason
     : 'YouTube는 검색·영상 재생에 사용합니다. 코드 분석은 연결된 별도 음원으로 수행합니다.';
-}).catch(() => {});
+}
+getJSON('/api/capabilities').then(applyCapabilities).catch(() => {});
+
+async function refreshSettings() {
+  const data = await getJSON('/api/settings/youtube');
+  $('keyStatus').textContent = data.configured ? '검색 키가 저장되어 있습니다. 아래에서 새 키로 변경할 수 있습니다.' : 'API 키를 한 번 저장하면 검색할 수 있습니다.';
+  $('keyForm').classList.toggle('hidden', !data.can_edit);
+  if (!data.can_edit) $('keyStatus').textContent += ' 키 저장은 개인 모드에서 지원합니다.';
+}
+let diagnosticsSnapshot = null;
+async function refreshDiagnostics() {
+  try {
+    diagnosticsSnapshot = await getJSON('/api/diagnostics');
+    const d = diagnosticsSnapshot;
+    $('diagnostics').textContent = `앱 버전: ${d.revision}\n개인 모드: ${d.private_mode ? '켜짐' : '꺼짐'}\n검색 설정: ${d.youtube_search ? '사용 가능' : '키 설정 필요'}\n링크 분석 도구: ${d.youtube_audio ? '준비됨' : '준비 필요'}\nyt-dlp: ${d.yt_dlp_version || '미설치'}\n최근 오류: ${d.last_error ? d.last_error.message + ' [' + d.last_error.code + ']' : '없음'}`;
+  } catch (e) { $('diagnostics').textContent = e.message; }
+}
+$('openSettings').onclick = () => {
+  $('searchSettings').open = true;
+  $('searchSettings').scrollIntoView({behavior:'smooth',block:'start'});
+  refreshSettings().catch(e => {$('keyStatus').textContent = e.message;});
+  refreshDiagnostics();
+};
+$('refreshDiagnostics').onclick = refreshDiagnostics;
+$('searchSettings').addEventListener('toggle', () => { if ($('searchSettings').open) refreshDiagnostics(); });
+$('copyDiagnostics').onclick = async () => {
+  if (!diagnosticsSnapshot) { await refreshDiagnostics(); return; }
+  try { await navigator.clipboard.writeText(JSON.stringify(diagnosticsSnapshot,null,2)); $('copyDiagnostics').textContent = '복사했습니다'; }
+  catch { $('copyDiagnostics').textContent = '아래 상태 화면을 공유해 주세요'; }
+};
+$('saveApiKey').onclick = async () => {
+  const key = $('youtubeApiKey').value.trim();
+  if (!key) { $('keyStatus').textContent = 'API 키를 입력해 주세요.'; return; }
+  $('saveApiKey').disabled = true;
+  $('keyStatus').textContent = 'Google 연결을 확인하는 중…';
+  try {
+    const data = await postJSON('/api/settings/youtube', {api_key:key}, {'X-Chordapp-Settings':'1'});
+    $('keyStatus').textContent = data.message;
+    applyCapabilities(await getJSON('/api/capabilities'));
+  } catch (e) { $('keyStatus').textContent = e.message; }
+  finally { $('youtubeApiKey').value = ''; $('saveApiKey').disabled = false; refreshDiagnostics(); }
+};
+refreshSettings().catch(e=>{$('keyStatus').textContent=e.message;});
 
 /* ---------- 데모 ---------- */
 fetch('/api/demo').then(r => r.json()).then(d => {
@@ -1306,9 +1364,9 @@ async function getJSON(url) {
   if (!res.ok) throw new Error(apiError(data, res.status));
   return data;
 }
-async function postJSON(url, body) {
+async function postJSON(url, body, extraHeaders = {}) {
   const res = await fetch(url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...extraHeaders }, body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(apiError(data, res.status));

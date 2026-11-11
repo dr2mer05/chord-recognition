@@ -9,13 +9,16 @@ from __future__ import annotations
 import shutil
 import tempfile
 import math
+import os
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from ..models import AnalysisResult
 from ..service import AnalysisCache, ChordService, LocalJsonDatabase, NullDatabase
@@ -41,6 +44,7 @@ ALLOWED_SUFFIXES = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aiff", ".aif"}
 MAX_UPLOAD_BYTES = 40 * 1024 * 1024
 
 app = FastAPI(title="Chord Analysis Lab", version="0.2.0")
+app.state.last_error = None
 
 
 def _build_service() -> ChordService:
@@ -49,6 +53,18 @@ def _build_service() -> ChordService:
 
 
 service = _build_service()
+
+
+def _running_revision() -> str:
+    from ..config import PROJECT_ROOT
+    try:
+        return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=PROJECT_ROOT,
+            capture_output=True, text=True, timeout=2, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+RUNNING_REVISION = _running_revision()
 
 
 # --------------------------------------------------------------------------
@@ -111,6 +127,65 @@ def _capabilities() -> dict:
 @app.get("/api/capabilities")
 def capabilities() -> dict:
     return _capabilities()
+
+
+def _record_error(code: str, message: str) -> None:
+    # 입력한 링크·키·다운로더 원문을 진단 정보에 넣지 않는다.
+    app.state.last_error = {"code": code, "message": message,
+                            "at": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/api/settings/youtube")
+def youtube_settings() -> dict:
+    return {"configured": bool(os.environ.get("YOUTUBE_API_KEY")),
+            "can_edit": os.environ.get("CHORDAPP_PRIVATE_MODE") == "1"}
+
+
+class YouTubeKeyRequest(BaseModel):
+    api_key: SecretStr
+
+
+@app.post("/api/settings/youtube")
+def save_youtube_settings(req: YouTubeKeyRequest, request: Request) -> dict:
+    from ..config import save_youtube_key, validate_youtube_key
+    from ..service.youtube import DataApiSearch
+    if os.environ.get("CHORDAPP_PRIVATE_MODE") != "1":
+        raise HTTPException(403, "키 저장은 개인 모드에서만 사용할 수 있습니다.")
+    # 다른 사이트의 폼·스크립트가 키 설정을 변경하지 못하게 한다. CORS는 열지 않는다.
+    if request.headers.get("X-Chordapp-Settings") != "1":
+        raise HTTPException(403, "사이트의 검색 설정 화면에서 저장해 주세요.")
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlparse
+        if urlparse(origin).netloc.lower() != request.headers.get("host", "").lower():
+            raise HTTPException(403, "현재 사이트에서 설정을 저장해 주세요.")
+    try:
+        key = validate_youtube_key(req.api_key.get_secret_value())
+        DataApiSearch(api_key=key).validate()
+        save_youtube_key(key)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except SearchUnavailable as exc:
+        _record_error(exc.code, str(exc))
+        raise HTTPException(503, {"code": exc.code, "message": str(exc)})
+    except OSError:
+        raise HTTPException(500, "서버 설정을 저장하지 못했습니다. 기존 키는 유지됩니다.")
+    service.search_backend = DataApiSearch()
+    app.state.last_error = None
+    return {"configured": True, "message": "연결을 확인하고 키를 저장했습니다. 지금 검색할 수 있습니다."}
+
+
+@app.get("/api/diagnostics")
+def diagnostics() -> dict:
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        downloader = version("yt-dlp")
+    except PackageNotFoundError:
+        downloader = None
+    return {"revision": RUNNING_REVISION, "youtube_search": bool(service.search_backend.available),
+            "private_mode": service.private_youtube.enabled,
+            "youtube_audio": service.private_youtube.available, "yt_dlp_version": downloader,
+            "last_error": getattr(app.state, "last_error", None)}
 
 
 @app.get("/api/audio-sources")
@@ -197,7 +272,8 @@ def search(q: str = Query(..., min_length=1), limit: int = 8) -> JSONResponse:
     try:
         videos = service.search_videos(q, limit=limit)
     except SearchUnavailable as exc:
-        raise HTTPException(503, str(exc))
+        _record_error(exc.code, str(exc))
+        raise HTTPException(503, {"code": exc.code, "message": str(exc)})
     except YouTubeError as exc:
         raise HTTPException(502, str(exc))
     return JSONResponse({"query": q, "results": [v.to_dict() for v in videos]})
@@ -218,6 +294,7 @@ def analyze_youtube(req: YouTubeRequest) -> JSONResponse:
     except AudioSourceUnavailable as exc:
         raise HTTPException(409, {"code": exc.code, "message": str(exc)})
     except PrivateYouTubeError as exc:
+        _record_error(exc.code, str(exc))
         code = 503 if exc.code in {"private_mode_disabled", "dependency_missing"} else 504 if exc.code == "download_timeout" else 502
         raise HTTPException(code, {"code": exc.code, "message": str(exc)})
     except YouTubeError as exc:

@@ -86,7 +86,16 @@ class ChordService:
 
     # -- 유튜브 --------------------------------------------------------
     def search_videos(self, query: str, limit: int = 8) -> List[VideoInfo]:
-        return self.search_backend.search(query, limit=limit)
+        from dataclasses import asdict
+        query = query.strip()
+        limit = max(1, min(limit, 25))
+        key = self.cache.make_key("video_search", query, limit=limit)
+        cached = self.cache.get(key, max_age=3600)
+        if cached is not None:
+            return [VideoInfo(**item) for item in cached["videos"]]
+        videos = self.search_backend.search(query, limit=limit)
+        self.cache.put(key, "video_search", {"videos": [asdict(video) for video in videos]})
+        return videos
 
     def analyze_youtube(
         self,
