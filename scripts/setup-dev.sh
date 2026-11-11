@@ -5,6 +5,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-cpu.lock
 .venv/bin/python -m pip install -r requirements-private.txt
 .venv/bin/python -m pip check
+.venv/bin/python -m chordapp.service.pot install
 mkdir -p work
 .venv/bin/python - <<'PY'
 import hashlib

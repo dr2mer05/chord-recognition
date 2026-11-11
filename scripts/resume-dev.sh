@@ -25,6 +25,6 @@ PY
 then
   bash scripts/setup-dev.sh
 fi
-exec bash scripts/start-dev.sh --resumed
+exec bash scripts/start-dev.sh --resumed --restart
 }
 main "$@"

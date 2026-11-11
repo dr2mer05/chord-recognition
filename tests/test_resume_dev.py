@@ -24,7 +24,7 @@ def projects(tmp_path):
     git(source, 'config', 'user.name', 'Test')
     (source / 'scripts').mkdir()
     shutil.copyfile(RESUME, source / 'scripts/resume-dev.sh')
-    (source / 'scripts/start-dev.sh').write_text('#!/bin/bash\nprintf "v1 %s" "$1" > work/started.txt\n')
+    (source / 'scripts/start-dev.sh').write_text('#!/bin/bash\nprintf "v1 %s" "$*" > work/started.txt\n')
     (source / 'scripts/setup-dev.sh').write_text('#!/bin/bash\nexit 90\n')
     (source / 'requirements-cpu.lock').write_text('cpu1\n')
     (source / 'requirements-private.txt').write_text('private1\n')
@@ -47,7 +47,7 @@ def projects(tmp_path):
 
 def publish(source):
     (source / 'app.txt').write_text('v2\n')
-    (source / 'scripts/start-dev.sh').write_text('#!/bin/bash\nprintf "v2 %s" "$1" > work/started.txt\n')
+    (source / 'scripts/start-dev.sh').write_text('#!/bin/bash\nprintf "v2 %s" "$*" > work/started.txt\n')
     with (source / 'scripts/resume-dev.sh').open('a') as stream:
         stream.write('# self update\n' * 300)
     git(source, 'add', '.')
@@ -66,7 +66,7 @@ def test_resume_updates_without_terminal_commands_and_survives_self_update(proje
     result = resume(local)
     assert result.returncode == 0, result.stderr
     assert (local / 'app.txt').read_text() == 'v2\n'
-    assert (local / 'work/started.txt').read_text() == 'v2 --resumed'
+    assert (local / 'work/started.txt').read_text() == 'v2 --resumed --restart'
     assert git(source, 'rev-parse', 'HEAD') == git(local, 'rev-parse', 'HEAD')
 
 
@@ -77,7 +77,7 @@ def test_resume_preserves_user_changes(projects):
     result = resume(local)
     assert result.returncode == 0 and '건너뜁니다' in result.stdout
     assert (local / 'app.txt').read_text() == 'my work\n'
-    assert (local / 'work/started.txt').read_text() == 'v1 --resumed'
+    assert (local / 'work/started.txt').read_text() == 'v1 --resumed --restart'
 
 
 def test_failed_update_starts_existing_version(projects):
@@ -86,4 +86,4 @@ def test_failed_update_starts_existing_version(projects):
     result = resume(local)
     assert result.returncode == 0 and '현재 버전' in result.stdout
     assert (local / 'app.txt').read_text() == 'v1\n'
-    assert (local / 'work/started.txt').read_text() == 'v1 --resumed'
+    assert (local / 'work/started.txt').read_text() == 'v1 --resumed --restart'

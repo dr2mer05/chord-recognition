@@ -179,6 +179,7 @@ def save_youtube_settings(req: YouTubeKeyRequest, request: Request) -> dict:
 def diagnostics() -> dict:
     from importlib.metadata import PackageNotFoundError, version
     from ..service.private_youtube import runtime_versions
+    from ..service import pot
     try:
         downloader = version("yt-dlp")
     except PackageNotFoundError:
@@ -187,6 +188,7 @@ def diagnostics() -> dict:
             "private_mode": service.private_youtube.enabled,
             "youtube_audio": service.private_youtube.available, "yt_dlp_version": downloader,
             "runtime_versions": runtime_versions(),
+            "token_provider": pot.status(),
             "last_error": getattr(app.state, "last_error", None)}
 
 
@@ -297,7 +299,7 @@ def analyze_youtube(req: YouTubeRequest) -> JSONResponse:
         raise HTTPException(409, {"code": exc.code, "message": str(exc)})
     except PrivateYouTubeError as exc:
         _record_error(exc.code, str(exc), exc.diagnostics)
-        code = 503 if exc.code in {"private_mode_disabled", "dependency_missing"} else 504 if exc.code == "download_timeout" else 502
+        code = 503 if exc.code in {"private_mode_disabled", "dependency_missing", "pot_unavailable"} else 504 if exc.code == "download_timeout" else 502
         raise HTTPException(code, {"code": exc.code, "message": str(exc), "diagnostics": exc.diagnostics})
     except YouTubeError as exc:
         raise HTTPException(502, str(exc))

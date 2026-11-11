@@ -7,6 +7,7 @@
   "hostRequirements": { "cpus": 2, "memory": "4gb" },
   "forwardPorts": [8000],
   "portsAttributes": {
+    "4416": { "label": "내부 토큰 공급기", "onAutoForward": "ignore" },
     "8000": {
       "label": "Chord Analysis Lab · 개인 검증",
       "onAutoForward": "openBrowser",

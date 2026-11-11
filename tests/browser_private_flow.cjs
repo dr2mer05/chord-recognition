@@ -22,6 +22,10 @@ const assert = require('node:assert/strict');
    const info=await page.locator('#diagnostics').textContent();
    assert(info.includes('youtube_bot_check') && info.includes('영상 정보 조회'));
    assert(info.includes('Deno 실행:') && info.includes('FFmpeg 실행:'));
+   if(process.env.CHORDAPP_EXPECT_POT==='1') {
+    assert(info.includes('토큰 공급기: 연결됨') && info.includes('토큰 플러그인: 2.0.2'));
+    assert(info.includes('토큰 서버: 2.0.2'));
+   }
    assert(!info.includes('--cookies'));
    await page.screenshot({path:process.env.CHORDAPP_SCREENSHOT||'/tmp/chord-download-error.png',fullPage:true});
    assert.deepEqual(errors,[]);console.log('390px: classified failure, processing stage and runtime diagnostics passed');

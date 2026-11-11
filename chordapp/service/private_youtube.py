@@ -46,6 +46,8 @@ def download_failure(proc):
         code, message = "video_unavailable", "선택한 영상을 현재 서버에서 이용할 수 없습니다. 영상의 공개 상태를 확인해 주세요."
     elif "certificate verify failed" in text or "certificate_verify_failed" in text:
         code, message = "network_tls_error", "서버가 YouTube 연결의 인증서를 검증하지 못했습니다. 서버의 인증서 설정을 확인해야 합니다."
+    elif ("po token" in text or "pot server" in text or "bgutil" in text) and any(word in text for word in ("failed", "error", "unavailable", "not available", "not found")):
+        code, message = "token_generation_failed", "YouTube 요청 증명 토큰을 생성하거나 전달하지 못했습니다. 실행 상태에서 토큰 공급기 연결을 확인해 주세요."
     elif "no supported javascript runtime" in text or "challenge solving failed" in text:
         code, message = "youtube_runtime_error", "YouTube 연결에 필요한 JavaScript 처리에 실패했습니다. 실행 상태에서 Deno와 EJS 설치 상태를 확인해 주세요."
     elif "requested format is not available" in text:
@@ -141,6 +143,13 @@ class PrivateYouTubeProvider:
                 "-o", str(directory / "audio.%(ext)s")]
         # EJS는 설치된 패키지만 사용한다. 외부 스크립트 자동 다운로드는 하지 않는다.
         args += ["--js-runtimes", "deno:" + find_deno()]
+        from . import pot
+        if pot.enabled():
+            args += ["--extractor-args", "youtube:player_client=mweb",
+                     "--extractor-args", "youtubepot-bgutilhttp:base_url=" + pot.URL]
+        else:
+            # 비교 기준선은 설치된 외부 공급 플러그인을 자동 사용하지 않는다.
+            args += ["--no-plugin-dirs"]
         return args + [watch_url(video_id)]
 
     def _download(self, command):
@@ -166,6 +175,12 @@ class PrivateYouTubeProvider:
     def audio(self, video):
         video_id = parse_video_id(video)
         self.ensure_available()
+        from . import pot
+        if pot.enabled():
+            try:
+                pot.ensure_started()
+            except pot.PotError as exc:
+                raise PrivateYouTubeError("pot_unavailable", str(exc)) from None
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         # 동일 영상의 동시 요청도 서로의 파일을 덮어쓰거나 삭제하지 않는다.
         with tempfile.TemporaryDirectory(prefix=video_id + "-", dir=self.temp_dir) as scratch:
@@ -177,7 +192,10 @@ class PrivateYouTubeProvider:
             except OSError as exc:
                 raise PrivateYouTubeError("download_failed", "음원 연결 도구를 실행하지 못했습니다. 서버 설치 상태를 확인해 주세요.") from exc
             if proc.returncode:
-                raise download_failure(proc)
+                error = download_failure(proc)
+                if pot.enabled():
+                    error.diagnostics["token_provider"] = pot.status()["state"]
+                raise error
             path = directory / "audio.wav"
             if not path.is_file():
                 raise PrivateYouTubeError("unsupported_video", "분석할 음원이 없습니다. 라이브 영상과 15분 초과 영상은 지원하지 않습니다.")

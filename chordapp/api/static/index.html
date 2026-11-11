@@ -440,6 +440,11 @@ async function refreshDiagnostics() {
     const d = diagnosticsSnapshot;
     $('diagnostics').textContent = `앱 버전: ${d.revision}\n개인 모드: ${d.private_mode ? '켜짐' : '꺼짐'}\n검색 설정: ${d.youtube_search ? '사용 가능' : '키 설정 필요'}\n링크 분석 도구: ${d.youtube_audio ? '준비됨' : '준비 필요'}\nyt-dlp: ${d.yt_dlp_version || '미설치'}\n최근 오류: ${d.last_error ? d.last_error.message + ' [' + d.last_error.code + ']' : '없음'}`;
     if (d.runtime_versions) $('diagnostics').textContent += `\nDeno 실행: ${d.runtime_versions.deno || '실행 확인 필요'}\nFFmpeg 실행: ${d.runtime_versions.ffmpeg || '실행 확인 필요'}\nEJS 설치: ${d.runtime_versions.ejs || '미설치'}`;
+    if (d.token_provider) {
+      const states = {disabled:'꺼짐',ready:'연결됨',stopped:'시작 대기',not_installed:'설치 필요',version_mismatch:'버전 불일치'};
+      const p = d.token_provider;
+      $('diagnostics').textContent += `\n토큰 공급기: ${states[p.state] || p.state}\n토큰 플러그인: ${p.plugin_version || '미설치'}\n토큰 서버: ${p.server_version || '연결되지 않음'}`;
+    }
     const detail = d.last_error?.details;
     if (detail) $('diagnostics').textContent += `\n실패 단계: ${detail.stage}\n도구 종료 코드: ${detail.exit_code}\nHTTP 응답: ${detail.http_status || '확인되지 않음'}`;
   } catch (e) { $('diagnostics').textContent = e.message; }

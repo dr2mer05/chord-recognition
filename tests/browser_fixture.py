@@ -22,6 +22,11 @@ if __name__ == "__main__":
                 return VideoInfo(video_id, title="합성 검증 음원", channel="테스트 전용")
 
         service.search_backend = FixtureSearch()
+        if os.environ.get("CHORDAPP_TEST_POT") == "1":
+            # 표시 계약만 검증한다. 실제 토큰 생성 성공을 모의 결과로 주장하지 않는다.
+            from chordapp.service import pot
+            pot.status = lambda: {"enabled": True, "state": "ready", "expected_version": "2.0.2",
+                "plugin_version": "2.0.2", "server_version": "2.0.2", "installed": True}
         if os.environ.get("CHORDAPP_TEST_SEARCH") == "1":
             import chordapp.config as config
             from chordapp.service.youtube import DataApiSearch, SearchUnavailable
