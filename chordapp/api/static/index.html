@@ -237,6 +237,9 @@
       <p class="hint">API 제한사항은 YouTube Data API v3로 지정하세요. 서버 요청이므로 웹사이트 주소 제한을 적용한 키는 사용할 수 없습니다.</p>
       <div class="row"><button id="refreshDiagnostics">실행 상태 확인</button><button id="copyDiagnostics">상태 복사</button></div>
       <pre id="diagnostics" class="hint" style="white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px" role="status" aria-live="polite"></pre>
+      <button id="compareConnection" class="hidden">영상 연결 비교</button>
+      <p class="hint hidden" id="comparisonHelp">위에 입력한 영상을 기존·현재 설정으로 각각 받아 봅니다. 최대 약 4분 동안 이 화면을 열어두세요. 임시 음원은 삭제하고 분석 기록은 변경하지 않습니다.</p>
+      <pre id="comparisonResult" class="hint" style="white-space:pre-wrap;overflow-wrap:anywhere" role="status" aria-live="polite"></pre>
     </details>
 
     <div class="panel">
@@ -418,6 +421,8 @@ Object.keys(TABS).forEach(t => $(t).onclick = () => {
 /* ---------- 기능 가용성 ---------- */
 function applyCapabilities(c) {
   state.caps = c;
+  $('compareConnection').classList.toggle('hidden', !c.private_mode);
+  $('comparisonHelp').classList.toggle('hidden', !c.private_mode);
   $('doSearch').disabled = !c.youtube_search;
   $('q').disabled = !c.youtube_search;
   $('q').placeholder = c.youtube_search ? '곡 제목 또는 아티스트로 검색' : '검색 설정에서 API 키를 등록해 주세요.';
@@ -434,10 +439,16 @@ async function refreshSettings() {
   if (!data.can_edit) $('keyStatus').textContent += ' 키 저장은 개인 모드에서 지원합니다.';
 }
 let diagnosticsSnapshot = null;
+function showComparison(report) {
+  if (!report) return;
+  const rows = report.rows.map(r => `${r.label}: ${r.ok ? '성공' : '실패'} · ${r.seconds}초\n${r.message} [${r.code}]${r.details ? '\n실패 단계: ' + r.details.stage + ' · HTTP: ' + (r.details.http_status || '확인되지 않음') : ''}`);
+  $('comparisonResult').textContent = `${report.state === 'complete' ? '비교 완료' : '연결 비교 중'} (${report.rows.length}/2)\n\n${rows.join('\n\n')}\n\n동일 서버·동일 도구 버전에서 클라이언트 설정을 비교합니다. 이전 PC 환경 전체를 재현하는 검사는 아닙니다.`;
+}
 async function refreshDiagnostics() {
   try {
     diagnosticsSnapshot = await getJSON('/api/diagnostics');
     const d = diagnosticsSnapshot;
+    showComparison(d.connection_comparison);
     $('diagnostics').textContent = `앱 버전: ${d.revision}\n개인 모드: ${d.private_mode ? '켜짐' : '꺼짐'}\n검색 설정: ${d.youtube_search ? '사용 가능' : '키 설정 필요'}\n링크 분석 도구: ${d.youtube_audio ? '준비됨' : '준비 필요'}\nyt-dlp: ${d.yt_dlp_version || '미설치'}\n최근 오류: ${d.last_error ? d.last_error.message + ' [' + d.last_error.code + ']' : '없음'}`;
     if (d.runtime_versions) $('diagnostics').textContent += `\nDeno 실행: ${d.runtime_versions.deno || '실행 확인 필요'}\nFFmpeg 실행: ${d.runtime_versions.ffmpeg || '실행 확인 필요'}\nEJS 설치: ${d.runtime_versions.ejs || '미설치'}`;
     if (d.token_provider) {
@@ -456,6 +467,25 @@ $('openSettings').onclick = () => {
   refreshDiagnostics();
 };
 $('refreshDiagnostics').onclick = refreshDiagnostics;
+$('compareConnection').onclick = async () => {
+  const url = $('url').value.trim();
+  if (!url) { $('comparisonResult').textContent = '먼저 위의 영상 링크 입력란에 비교할 링크를 넣어 주세요.'; return; }
+  $('compareConnection').disabled = true;
+  $('doYt').disabled = true;
+  $('url').disabled = true;
+  $('comparisonResult').textContent = '기존·현재 설정으로 음원 확보를 비교합니다… (0/2)';
+  const timer = setInterval(refreshDiagnostics, 4000);
+  try {
+    showComparison(await postJSON('/api/diagnostics/youtube-connection', {url}, {'X-Chordapp-Settings':'1'}));
+  } catch (e) { $('comparisonResult').textContent = e.message; }
+  finally {
+    clearInterval(timer);
+    $('compareConnection').disabled = false;
+    $('doYt').disabled = false;
+    $('url').disabled = false;
+    refreshDiagnostics();
+  }
+};
 $('searchSettings').addEventListener('toggle', () => { if ($('searchSettings').open) refreshDiagnostics(); });
 $('copyDiagnostics').onclick = async () => {
   if (!diagnosticsSnapshot) { await refreshDiagnostics(); return; }

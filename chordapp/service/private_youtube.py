@@ -105,9 +105,17 @@ def runtime_versions():
 
 
 class PrivateYouTubeProvider:
-    def __init__(self, temp_dir=Path("work/private-youtube"), timeout=180):
+    def __init__(self, temp_dir=Path("work/private-youtube"), timeout=180, profile="current"):
+        if profile not in {"current", "legacy_clients"}:
+            raise ValueError("지원하지 않는 연결 비교 설정입니다.")
         self.temp_dir = Path(temp_dir)
         self.timeout = timeout
+        self.profile = profile
+
+    @property
+    def uses_pot(self):
+        from . import pot
+        return self.profile == "current" and pot.enabled()
 
     @property
     def enabled(self):
@@ -144,12 +152,14 @@ class PrivateYouTubeProvider:
         # EJS는 설치된 패키지만 사용한다. 외부 스크립트 자동 다운로드는 하지 않는다.
         args += ["--js-runtimes", "deno:" + find_deno()]
         from . import pot
-        if pot.enabled():
+        if self.uses_pot:
             args += ["--extractor-args", "youtube:player_client=mweb",
                      "--extractor-args", "youtubepot-bgutilhttp:base_url=" + pot.URL]
         else:
             # 비교 기준선은 설치된 외부 공급 플러그인을 자동 사용하지 않는다.
             args += ["--no-plugin-dirs"]
+            if self.profile == "legacy_clients":
+                args += ["--extractor-args", "youtube:player_client=android,ios,tv,web"]
         return args + [watch_url(video_id)]
 
     def _download(self, command):
@@ -176,7 +186,7 @@ class PrivateYouTubeProvider:
         video_id = parse_video_id(video)
         self.ensure_available()
         from . import pot
-        if pot.enabled():
+        if self.uses_pot:
             try:
                 pot.ensure_started()
             except pot.PotError as exc:
@@ -193,7 +203,7 @@ class PrivateYouTubeProvider:
                 raise PrivateYouTubeError("download_failed", "음원 연결 도구를 실행하지 못했습니다. 서버 설치 상태를 확인해 주세요.") from exc
             if proc.returncode:
                 error = download_failure(proc)
-                if pot.enabled():
+                if self.uses_pot:
                     error.diagnostics["token_provider"] = pot.status()["state"]
                 raise error
             path = directory / "audio.wav"

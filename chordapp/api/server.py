@@ -189,7 +189,32 @@ def diagnostics() -> dict:
             "youtube_audio": service.private_youtube.available, "yt_dlp_version": downloader,
             "runtime_versions": runtime_versions(),
             "token_provider": pot.status(),
+            "connection_comparison": getattr(app.state, "connection_comparison", None),
             "last_error": getattr(app.state, "last_error", None)}
+
+
+class ConnectionCheckRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+
+
+@app.post("/api/diagnostics/youtube-connection")
+def check_youtube_connection(req: ConnectionCheckRequest, request: Request) -> dict:
+    from urllib.parse import urlparse
+    from ..service.connection_check import CheckBusy, compare
+    if not service.private_youtube.enabled:
+        raise HTTPException(403, "연결 비교는 개인 링크 분석 모드에서만 사용할 수 있습니다.")
+    if request.headers.get("X-Chordapp-Settings") != "1":
+        raise HTTPException(403, "사이트의 영상 연결 비교 버튼을 사용해 주세요.")
+    origin = request.headers.get("origin")
+    if origin and urlparse(origin).netloc.lower() != request.headers.get("host", "").lower():
+        raise HTTPException(403, "현재 사이트에서 연결을 비교해 주세요.")
+    try:
+        report = compare(req.url, lambda value: setattr(app.state, "connection_comparison", value))
+    except InvalidVideoUrl as exc:
+        raise HTTPException(400, str(exc))
+    except CheckBusy as exc:
+        raise HTTPException(409, str(exc))
+    return report
 
 
 @app.get("/api/audio-sources")

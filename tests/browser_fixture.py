@@ -75,6 +75,24 @@ if __name__ == "__main__":
                         yield path
 
             service.private_youtube = FixturePrivateProvider()
+            if os.environ.get("CHORDAPP_TEST_CONNECTION_COMPARE") == "1":
+                # 두 프로필 모두 실제 공급기 검증·임시 파일 정리를 거치되 외부 요청만 모사한다.
+                from chordapp.service import connection_check, pot
+                from chordapp.service.private_youtube import PrivateYouTubeProvider
+                import subprocess
+                for name in ("CHORDAPP_PRIVATE_MODE", "CHORDAPP_ENABLE_YTDLP", "CHORDAPP_ENABLE_POT"):
+                    os.environ[name] = "1"
+                pot.ensure_started = lambda: None
+
+                class CompareProvider(PrivateYouTubeProvider):
+                    def _download(self, command):
+                        if self.profile == "current":
+                            return subprocess.CompletedProcess(command, 1, "[download] Destination: fixture", "HTTP Error 403: Forbidden")
+                        output = Path(command[command.index("-o") + 1].replace("%(ext)s", "wav"))
+                        shutil.copyfile(demo, output)
+                        return subprocess.CompletedProcess(command, 0, "", "")
+
+                connection_check.PrivateYouTubeProvider = CompareProvider
         meter = os.environ.get("CHORDAPP_TEST_METER")
         if meter:
             import numpy as np
