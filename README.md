@@ -48,6 +48,11 @@ YouTube Data API 키를 입력하고 **연결 확인 · 저장**을 선택하세
 이 화면의 스크린샷으로 상태를 전달할 수 있습니다. 서버 환경변수에 별도 키를 지정했다면 재시작 시
 그 값이 `.env`보다 우선한다는 기존 규칙은 유지됩니다.
 
+음원 연결 실패는 YouTube 자동화 확인·프록시·요청 빈도·영상 접근 권한·지역·TLS·JavaScript 처리·
+형식·변환 실패로 구분합니다. 원문 오류·URL·키·사용자 경로는 공유하지 않고, 분류 코드와 처리 단계·
+종료 코드·확인된 HTTP 상태만 표시합니다. 이 분류는 확인된 오류 문구에 근거하며 접근 제한을 해제하지 않습니다.
+Deno·FFmpeg는 파일 존재뿐 아니라 실제 버전 명령 실행을 확인하고 EJS 설치 버전도 표시합니다.
+
 - [공식 인증 안내](https://developers.google.com/youtube/data/guides/authentication)
 - [공식 할당량 안내](https://developers.google.com/youtube/data/determine_quota_cost)
 

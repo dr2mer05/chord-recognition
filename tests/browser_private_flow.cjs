@@ -15,6 +15,18 @@ const assert = require('node:assert/strict');
   await page.goto(process.env.CHORDAPP_TEST_URL || 'http://127.0.0.1:8766');
   const video='https://youtu.be/PrivateTest';
   await page.locator('#url').fill(video);await page.locator('#doYt').click();
+  if(process.env.CHORDAPP_EXPECT_DOWNLOAD_ERROR==='bot') {
+   await page.waitForFunction(()=>document.querySelector('#ytStatus').textContent.includes('자동화 확인'));
+   await page.locator('#openSettings').click();
+   await page.waitForFunction(()=>document.querySelector('#diagnostics').textContent.includes('실패 단계'));
+   const info=await page.locator('#diagnostics').textContent();
+   assert(info.includes('youtube_bot_check') && info.includes('영상 정보 조회'));
+   assert(info.includes('Deno 실행:') && info.includes('FFmpeg 실행:'));
+   assert(!info.includes('--cookies'));
+   await page.screenshot({path:process.env.CHORDAPP_SCREENSHOT||'/tmp/chord-download-error.png',fullPage:true});
+   assert.deepEqual(errors,[]);console.log('390px: classified failure, processing stage and runtime diagnostics passed');
+   return;
+  }
   await page.waitForFunction(()=>document.querySelector('#ytStatus').textContent.includes('분석을 완료했습니다'),{},{timeout:120000});
   assert(await page.locator('#resultPanel').isVisible());
   assert.equal(await page.locator('#sourceForm').evaluate(el=>el.open),false);

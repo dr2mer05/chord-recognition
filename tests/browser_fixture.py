@@ -59,6 +59,11 @@ if __name__ == "__main__":
                 def reason(self): return "합성 음원을 이용한 개인 링크 경로 검증"
                 @contextmanager
                 def audio(self, video):
+                    if os.environ.get("CHORDAPP_TEST_DOWNLOAD_FAILURE") == "bot":
+                        import subprocess
+                        from chordapp.service.private_youtube import download_failure
+                        raise download_failure(subprocess.CompletedProcess([], 1,
+                            '[youtube] Downloading webpage', "Sign in to confirm you're not a bot. --cookies-from-browser"))
                     with tempfile.TemporaryDirectory(dir=".") as folder:
                         path = Path(folder) / "audio.wav"
                         shutil.copyfile(demo, path)

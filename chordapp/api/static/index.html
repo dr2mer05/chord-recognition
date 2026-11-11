@@ -439,6 +439,9 @@ async function refreshDiagnostics() {
     diagnosticsSnapshot = await getJSON('/api/diagnostics');
     const d = diagnosticsSnapshot;
     $('diagnostics').textContent = `앱 버전: ${d.revision}\n개인 모드: ${d.private_mode ? '켜짐' : '꺼짐'}\n검색 설정: ${d.youtube_search ? '사용 가능' : '키 설정 필요'}\n링크 분석 도구: ${d.youtube_audio ? '준비됨' : '준비 필요'}\nyt-dlp: ${d.yt_dlp_version || '미설치'}\n최근 오류: ${d.last_error ? d.last_error.message + ' [' + d.last_error.code + ']' : '없음'}`;
+    if (d.runtime_versions) $('diagnostics').textContent += `\nDeno 실행: ${d.runtime_versions.deno || '실행 확인 필요'}\nFFmpeg 실행: ${d.runtime_versions.ffmpeg || '실행 확인 필요'}\nEJS 설치: ${d.runtime_versions.ejs || '미설치'}`;
+    const detail = d.last_error?.details;
+    if (detail) $('diagnostics').textContent += `\n실패 단계: ${detail.stage}\n도구 종료 코드: ${detail.exit_code}\nHTTP 응답: ${detail.http_status || '확인되지 않음'}`;
   } catch (e) { $('diagnostics').textContent = e.message; }
 }
 $('openSettings').onclick = () => {

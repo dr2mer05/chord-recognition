@@ -129,10 +129,10 @@ def capabilities() -> dict:
     return _capabilities()
 
 
-def _record_error(code: str, message: str) -> None:
+def _record_error(code: str, message: str, details=None) -> None:
     # 입력한 링크·키·다운로더 원문을 진단 정보에 넣지 않는다.
     app.state.last_error = {"code": code, "message": message,
-                            "at": datetime.now(timezone.utc).isoformat()}
+                            "at": datetime.now(timezone.utc).isoformat(), "details": details}
 
 
 @app.get("/api/settings/youtube")
@@ -178,6 +178,7 @@ def save_youtube_settings(req: YouTubeKeyRequest, request: Request) -> dict:
 @app.get("/api/diagnostics")
 def diagnostics() -> dict:
     from importlib.metadata import PackageNotFoundError, version
+    from ..service.private_youtube import runtime_versions
     try:
         downloader = version("yt-dlp")
     except PackageNotFoundError:
@@ -185,6 +186,7 @@ def diagnostics() -> dict:
     return {"revision": RUNNING_REVISION, "youtube_search": bool(service.search_backend.available),
             "private_mode": service.private_youtube.enabled,
             "youtube_audio": service.private_youtube.available, "yt_dlp_version": downloader,
+            "runtime_versions": runtime_versions(),
             "last_error": getattr(app.state, "last_error", None)}
 
 
@@ -294,9 +296,9 @@ def analyze_youtube(req: YouTubeRequest) -> JSONResponse:
     except AudioSourceUnavailable as exc:
         raise HTTPException(409, {"code": exc.code, "message": str(exc)})
     except PrivateYouTubeError as exc:
-        _record_error(exc.code, str(exc))
+        _record_error(exc.code, str(exc), exc.diagnostics)
         code = 503 if exc.code in {"private_mode_disabled", "dependency_missing"} else 504 if exc.code == "download_timeout" else 502
-        raise HTTPException(code, {"code": exc.code, "message": str(exc)})
+        raise HTTPException(code, {"code": exc.code, "message": str(exc), "diagnostics": exc.diagnostics})
     except YouTubeError as exc:
         raise HTTPException(502, str(exc))
     except ValueError as exc:
