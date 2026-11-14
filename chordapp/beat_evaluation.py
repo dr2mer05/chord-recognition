@@ -76,22 +76,35 @@ def fixtures(directory, tracks, regenerate):
     return records
 
 
-def evaluate_tracks(directory, *, meter_mode='auto', tracker='auto', regenerate=False, tracks=None):
-    if meter_mode not in {'auto', 'reference'} or tracker not in {'auto', 'librosa'}:
+def evaluate_tracks(directory, *, meter_mode='auto', tracker='auto', regenerate=False, tracks=None,
+                    checkpoint='final0'):
+    if meter_mode not in {'auto', 'reference'} or tracker not in {'auto', 'librosa', 'plp', 'beat-this-model', 'beat-this-legacy'}:
         raise ValueError('지원하지 않는 평가 설정입니다.')
     tracks = list(synth.BEAT_EVAL_TRACKS if tracks is None else tracks)
     if not tracks:
         raise ValueError('평가할 합성 음원이 없습니다.')
     directory = Path(directory)
     records = fixtures(directory, tracks, regenerate)
+    selected = None
+    if tracker == 'plp':
+        selected = beat_tracker.LibrosaPLPTracker()
+    elif tracker.startswith('beat-this-'):
+        selected = beat_tracker.BeatThisTracker(device='cpu', checkpoint_path=checkpoint,
+            postprocess='model' if tracker == 'beat-this-model' else 'legacy')
+        if not selected.available:
+            raise ValueError('beat_this가 설치되지 않았습니다. 후보를 실행하지 않고 평가를 중단합니다.')
     rows = []
     for track in tracks:
         kwargs = {'beats_per_bar': track.beats_per_bar if meter_mode == 'reference' else None}
         if tracker == 'librosa':
             kwargs['tracker'] = None
+        elif selected is not None:
+            kwargs['tracker'] = selected
         started = time.perf_counter()
         feats = audio.extract_features(str(directory / (track.name + '.wav')), **kwargs)
         elapsed = time.perf_counter() - started
+        if selected is not None and (getattr(feats, 'beat_tracker_fallback', None) or feats.beat_source != selected.name):
+            raise ValueError(f'{selected.name} 실행 실패: librosa 폴백을 후보 성능으로 계산하지 않습니다.')
         reference_beats, reference_downbeats = synth.beat_grid(track)
         estimated_beats = np.asarray(feats.beat_times, dtype=float)
         indices = np.asarray(feats.downbeat_indices, dtype=int).reshape(-1)
@@ -107,6 +120,7 @@ def evaluate_tracks(directory, *, meter_mode='auto', tracker='auto', regenerate=
                           'duration_seconds': duration, 'pulse_unit': 'synthetic_generator_pulse'},
             'estimate': {'bpm': float(feats.tempo), 'beats_per_bar': int(feats.beats_per_bar),
                          'beat_source': feats.beat_source, 'beats_seconds': estimated_beats.tolist(),
+                         'fallback': getattr(feats, 'beat_tracker_fallback', None),
                          'downbeats_seconds': estimated_downbeats.tolist()},
             'metrics': {
                 'tempo': tempo_error(track.bpm, float(feats.tempo)),
@@ -123,6 +137,7 @@ def evaluate_tracks(directory, *, meter_mode='auto', tracker='auto', regenerate=
         'created_at': datetime.now(timezone.utc).isoformat(), 'environment': environment(),
         'settings': {'meter_mode': meter_mode, 'reference_meter_supplied': meter_mode == 'reference',
                      'tracker_request': tracker, 'tolerance_seconds': BEAT_TOLERANCE,
+                     'checkpoint': checkpoint if tracker.startswith('beat-this-') else None,
                      'event_scoring': 'all_estimates_against_generator_beats; audio_has_1s_release_tail',
                      'bar_scoring': 'consecutive_start_and_end_boundaries_within_annotated_music'},
         'summary': {'tracks': len(rows), 'beat_f_macro': mean('beats'),

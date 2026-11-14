@@ -389,26 +389,31 @@ def audio(name: str) -> FileResponse:
 
 
 DEMO_DIR = DATA_DIR / "demo"
+STRESS_DIR = DATA_DIR / "chord-stress"
 
 
-def _ensure_demo() -> List[Path]:
+def _ensure_demo(suite: str = "demo") -> List[Path]:
     """데모 음원이 없으면 그 자리에서 만든다. 합성이라 몇 초면 된다."""
-    wavs = sorted(DEMO_DIR.glob("*.wav"))
+    directory = STRESS_DIR if suite == "stress" else DEMO_DIR
+    wavs = sorted(directory.glob("*.wav"))
     if wavs:
         return wavs
+    if suite == "stress":
+        from ..tools.chord_stress import generate_stress
+        return sorted(generate_stress(directory))
     from ..tools.synth import generate_all
 
-    return sorted(generate_all(DEMO_DIR))
+    return sorted(generate_all(directory))
 
 
 @app.get("/api/demo")
-def demo_list() -> JSONResponse:
+def demo_list(suite: Literal["demo", "stress"] = "demo") -> JSONResponse:
     """자격증명 없이도 파이프라인 전체를 볼 수 있는 경로.
 
     정답 라벨(.lab)이 같이 있는 합성 음원이라 인식 결과를 정답과 대조할 수 있다.
     """
     tracks = []
-    for wav in _ensure_demo():
+    for wav in _ensure_demo(suite):
         lab = wav.with_suffix(".lab")
         truth = []
         if lab.exists():
@@ -418,35 +423,41 @@ def demo_list() -> JSONResponse:
         tracks.append({
             "name": wav.stem,
             "truth": truth[:8],
-            "audio_url": f"/api/demo/audio/{wav.stem}",
+            "audio_url": f"/api/demo/audio/{wav.stem}?suite={suite}",
         })
     return JSONResponse({"tracks": tracks})
 
 
 @app.post("/api/demo/{name}")
-def demo_analyze(name: str, limit: int = 6, key: Optional[str] = None) -> JSONResponse:
-    wav = (DEMO_DIR / f"{name}.wav").resolve()
-    if not wav.is_file() or DEMO_DIR.resolve() not in wav.parents:
+def demo_analyze(name: str, limit: int = 6, key: Optional[str] = None,
+                 suite: Literal["demo", "stress"] = "demo") -> JSONResponse:
+    directory = STRESS_DIR if suite == "stress" else DEMO_DIR
+    wav = (directory / f"{name}.wav").resolve()
+    if not wav.is_file() or directory.resolve() not in wav.parents:
         raise HTTPException(404, f"그런 데모가 없다: {name}")
 
     result = service.analyze_file(wav, key_override=key)
     result.source = f"{name}.wav (합성 데모)"
     report = service.full_report(result, limit=limit, key_override=key)
-    report["audio_url"] = f"/api/demo/audio/{name}"
+    report["audio_url"] = f"/api/demo/audio/{name}?suite={suite}"
 
     lab = wav.with_suffix(".lab")
     if lab.exists():
-        from ..evaluation import evaluate_result
+        from ..evaluation import evaluate_result, load_lab
 
-        scores = evaluate_result(result, lab, name=name).scores
-        report["accuracy"] = {k: round(v * 100, 1) for k, v in scores.items()}
+        evaluation = evaluate_result(result, lab, name=name)
+        report["accuracy"] = {k: round(v * 100, 1) for k, v in evaluation.scores.items()}
+        report["accuracy"]["exact_chord"] = round(evaluation.exact_chord * 100, 1)
+        report["accuracy"]["boundary_f"] = round(evaluation.boundaries['f'] * 100, 1)
+        report["reference_chords"] = [c.name() if c else "N" for _, _, c in load_lab(lab)]
     return JSONResponse(report)
 
 
 @app.get("/api/demo/audio/{name}")
-def demo_audio(name: str) -> FileResponse:
-    path = (DEMO_DIR / f"{name}.wav").resolve()
-    if not path.is_file() or DEMO_DIR.resolve() not in path.parents:
+def demo_audio(name: str, suite: Literal["demo", "stress"] = "demo") -> FileResponse:
+    directory = STRESS_DIR if suite == "stress" else DEMO_DIR
+    path = (directory / f"{name}.wav").resolve()
+    if not path.is_file() or directory.resolve() not in path.parents:
         raise HTTPException(404, "없는 파일")
     return FileResponse(path)
 

@@ -249,6 +249,13 @@
         정답 라벨이 함께 있는 합성 음원이라 인식 정확도까지 같이 나온다.
       </p>
       <div class="row" id="demos"><span class="hint">불러오는 중…</span></div>
+      <details id="stressPanel" style="margin-top:18px">
+        <summary>인식 검증 음원 — 화음 변화·짧은 코드·전위</summary>
+        <p class="hint">합성 음원 7개로 약점을 확인합니다. 전위 코드는 현재 오인식이 많습니다. 실제 곡 정확도를 뜻하지 않습니다.</p>
+        <div class="row" id="stressDemos"></div>
+        <p id="stressDemoStatus" class="hint" role="status" aria-live="polite"></p>
+        <p id="stressReference" class="hint" style="overflow-wrap:anywhere"></p>
+      </details>
     </div>
   </section>
 
@@ -299,6 +306,7 @@
       </div>
       <div>
         <h2>코드 차트 <span class="hint" style="text-transform:none">— 클릭하면 대체안</span></h2>
+        <p class="hint">색상과 내부 점수는 검토할 구간을 고르는 참고값이며, 정답 확률은 아닙니다.</p>
         <div class="chart" id="chart"></div>
       </div>
     </div>
@@ -514,21 +522,39 @@ fetch('/api/demo').then(r => r.json()).then(d => {
   [...$('demos').querySelectorAll('button')].forEach(b => b.onclick = () => runDemo(b.dataset.n));
 }).catch(e => { $('demos').innerHTML = `<span class="hint err">데모를 불러오지 못했다: ${esc(e.message)}</span>`; });
 
-async function runDemo(name) {
-  const buttons = [...$('demos').querySelectorAll('button')];
+const stressLabels = {same_root_major:'같은 근음: 장화음·7·maj7·6',same_root_minor:'같은 근음: 단화음 변화',
+  quality_two_beats:'두 박마다 화음 변화',same_root_sus:'sus 화음 변화',
+  three_pulse_harmony:'세 박마다 코드 변화',one_beat_changes:'한 박마다 코드 변화',inversions:'전위 코드 (현재 취약)'};
+let stressLoaded = false;
+$('stressPanel').addEventListener('toggle', async () => {
+  if (!$('stressPanel').open || stressLoaded) return;
+  stressLoaded = true;
+  try {
+    const d = await getJSON('/api/demo?suite=stress');
+    $('stressDemos').innerHTML = d.tracks.map(t =>
+      `<button data-n="${esc(t.name)}">${esc(stressLabels[t.name] || t.name)}</button>`).join('');
+    [...$('stressDemos').querySelectorAll('button')].forEach(b => b.onclick = () => runDemo(b.dataset.n, 'stress'));
+  } catch (e) { stressLoaded=false; $('stressDemoStatus').textContent=e.message; }
+});
+
+async function runDemo(name, suite = 'demo') {
+  const buttons = [...document.querySelectorAll('#demos button, #stressDemos button')];
+  const statusId = suite === 'stress' ? 'stressDemoStatus' : 'demoStatus';
   buttons.forEach(b => b.disabled = true);
-  setText('demoStatus', '<span class="spin"></span> 분석 중… (첫 실행은 numba JIT 때문에 느리다)');
+  setText(statusId, '<span class="spin"></span> 분석 중… (첫 실행은 잠시 걸립니다)');
+  $('stressReference').textContent = '';
   const t0 = performance.now();
   try {
-    const data = await postJSON(`/api/demo/${encodeURIComponent(name)}`, {});
-    state.reload = () => runDemo(name);
+    const data = await postJSON(`/api/demo/${encodeURIComponent(name)}?suite=${suite}`, {});
+    state.reload = () => runDemo(name, suite);
     render(data, (performance.now() - t0) / 1000);
     const a = data.accuracy;
-    setText('demoStatus', a
-      ? `정답 대비 root ${a.root}% · triad ${a.triad}% · seventh ${a.seventh}%`
+    setText(statusId, a
+      ? `원본 인식·합성 정답 대비 근음 ${a.root}% · 3화음 ${a.triad}% · 화음 종류 ${a.seventh}% · 전위 포함 ${a.exact_chord}% · 경계 F ${a.boundary_f}% (±100ms)`
       : '');
+    if (suite === 'stress') $('stressReference').textContent = '생성 시 정답: ' + (data.reference_chords || []).join(' → ');
   } catch (e) {
-    setText('demoStatus', esc(e.message), true);
+    setText(statusId, esc(e.message), true);
   } finally {
     buttons.forEach(b => b.disabled = false);
   }
@@ -807,7 +833,7 @@ function renderChart(rows, segments, bars) {
         return '<div class="chip cont"><div class="name">&nbsp;</div></div>';
       }
       const seg = segments ? segments[s.index] : null;
-      const title = seg ? `확신도 ${Math.min(seg.confidence, seg.agreement).toFixed(2)} · ${fmtTime(seg.start)}` : '';
+      const title = seg ? `내부 점수 ${Math.min(seg.confidence, seg.agreement).toFixed(2)} (정답 확률 아님) · ${fmtTime(seg.start)}` : '';
       // 칸마다 자기 시간 범위를 들고 있어야 이 박에서 코드를 갈라낼 수 있다
       const span = `data-i="${s.index}" data-start="${s.start}" data-end="${s.segment_end}"`;
       if (s.chord === null) {   // 앞 박에서 이어지는 칸

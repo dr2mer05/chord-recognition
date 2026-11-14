@@ -1,4 +1,4 @@
-"""정확도 평가 (MIREX 방식 WCSR).
+"""프레임 샘플 기반 일치율과 코드 경계 평가.
 
 .lab 정답 파일 하나로 합성 데모와 McGill Billboard / Isophonics를 같은 코드로 잰다.
 M2의 "Chordify 대비 정확도 측정" 항목이 여기에 붙는다.
@@ -6,12 +6,16 @@ M2의 "Chordify 대비 정확도 측정" 항목이 여기에 붙는다.
 비교 수준
   root    : 근음만 맞으면 정답
   triad   : 근음 + 3화음 품질 (MIREX major/minor 기본 지표)
-  seventh : 7음까지 (확장 코드 커버리지 확인용)
+  seventh : 근음 + 내부 화음 종류 전체 (기존 이름 유지, 확장음 포함)
+
+이름 seventh는 표준 MIREX seventh 축약 규칙을 구현했다는 뜻이 아니다.
+현재 파서가 해석하지 못하는 정답은 거부하며 무화음으로 대체하지 않는다.
+파서 자체의 추가음 축약은 유지하므로 모든 알터드 음을 구분하는 지표는 아니다.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -25,18 +29,23 @@ Interval = Tuple[float, float, Optional[Chord]]
 
 def load_lab(path: Path) -> List[Interval]:
     intervals: List[Interval] = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for number, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
         parts = line.split()
         if len(parts) < 3:
-            continue
+            raise ValueError(f'{Path(path).name}:{number}: 정답 구간 형식이 올바르지 않습니다.')
         start, end, label = float(parts[0]), float(parts[1]), parts[2]
+        if label.upper() == 'X':
+            raise ValueError(f'{Path(path).name}:{number}: 판정 불가 X를 무화음 N으로 채점할 수 없습니다.')
         try:
             chord: Optional[Chord] = Chord.parse(label)
             if chord is not None and chord.is_no_chord:
                 chord = None
         except ValueError:
-            chord = None
+            raise ValueError(f'{Path(path).name}:{number}: 지원하지 않는 정답 코드 {label!r}') from None
         intervals.append((start, end, chord))
+    _validate_intervals(intervals)
     return intervals
 
 
@@ -49,6 +58,29 @@ def _chord_at(intervals: Sequence[Interval], t: float) -> Optional[Chord]:
         if start <= t < end:
             return chord
     return None
+
+
+def _validate_intervals(intervals):
+    previous_end = 0.0
+    for start, end, _ in intervals:
+        if not np.isfinite([start, end]).all() or start < 0 or end <= start or start < previous_end - 1e-9:
+            raise ValueError('정답·예측 구간은 유한하고 증가하며 서로 겹치지 않아야 합니다.')
+        previous_end = end
+
+
+def _covered(intervals, t):
+    return any(start <= t < end for start, end, _ in intervals)
+
+
+def chord_boundary_f_measure(reference, estimate, tolerance=.1):
+    """주석 범위 안의 실제 코드 변화만 비교한다. 양 끝과 단순 구간 분할은 제외한다."""
+    def changes(intervals):
+        return [current[0] for previous, current in zip(intervals, intervals[1:])
+                if abs(previous[1] - current[0]) < 1e-9 and previous[2] != current[2]
+                and _covered(reference, current[0] - 1e-7) and _covered(reference, current[0] + 1e-7)]
+    result = beat_f_measure(changes(reference), changes(estimate), tolerance)
+    result['tolerance_seconds'] = tolerance
+    return result
 
 
 def _match(reference: Optional[Chord], estimate: Optional[Chord], level: str) -> bool:
@@ -71,11 +103,16 @@ class EvalReport:
     duration: float
     scores: Dict[str, float]
     confusions: List[Tuple[str, str, float]]  # (정답, 예측, 초)
+    by_quality: Dict[str, dict] = field(default_factory=dict)
+    boundaries: Dict[str, float] = field(default_factory=dict)
+    exact_chord: float = 0.0  # 근음·화음 종류·베이스를 모두 비교
 
     def format(self) -> str:
         head = f"{self.name}  ({self.duration:.1f}s)"
         body = "  ".join(f"{k}={v * 100:5.1f}%" for k, v in self.scores.items())
         lines = [f"{head}\n  {body}"]
+        if self.boundaries:
+            lines.append(f"  전위 포함 {self.exact_chord * 100:.1f}% · 코드 경계 F {self.boundaries['f'] * 100:.1f}% (±{self.boundaries['tolerance_seconds'] * 1000:.0f}ms)")
         if self.confusions:
             lines.append("  주요 오인식:")
             for ref, est, sec in self.confusions[:5]:
@@ -93,22 +130,40 @@ def evaluate(
     """프레임 샘플링 기반 WCSR. hop 간격으로 찍어 일치 비율을 잰다."""
     if not reference:
         raise ValueError("정답 구간이 비어 있다")
-    duration = max(e for _, e, _ in reference)
+    if not np.isfinite(hop) or hop <= 0:
+        raise ValueError('평가 간격은 유한한 양수여야 합니다.')
+    _validate_intervals(reference)
+    _validate_intervals(estimate)
+    end_time = max(e for _, e, _ in reference)
+    duration = sum(e - s for s, e, _ in reference)
 
     hits = {level: 0.0 for level in levels}
     total = 0
     confusion: Dict[Tuple[str, str], float] = {}
+    qualities = {}
+    exact_hits = 0
 
     t = 0.0
-    while t < duration:
+    while t < end_time:
+        if not _covered(reference, t):
+            t += hop
+            continue  # 주석이 없는 구간을 무화음 정답으로 간주하지 않는다.
         ref = _chord_at(reference, t)
         est = _chord_at(estimate, t)
+        predicted = _covered(estimate, t)
         total += 1
         for level in levels:
-            if _match(ref, est, level):
+            if predicted and _match(ref, est, level):
                 hits[level] += 1
-        if not _match(ref, est, "triad"):
-            key = (ref.name() if ref else "N", est.name() if est else "N")
+        full_quality = predicted and _match(ref, est, 'seventh')
+        exact_hits += bool(full_quality and (ref is None or (ref.bass if ref.bass is not None else ref.root)
+                            == (est.bass if est.bass is not None else est.root)))
+        quality = ref.quality if ref else 'N'
+        row = qualities.setdefault(quality, {'frames': 0, 'correct': 0})
+        row['frames'] += 1
+        row['correct'] += int(full_quality)
+        if not predicted or not _match(ref, est, "triad"):
+            key = (ref.name() if ref else "N", est.name() if est else "N" if predicted else "X")
             confusion[key] = confusion.get(key, 0.0) + hop
         t += hop
 
@@ -119,6 +174,10 @@ def evaluate(
         duration=duration,
         scores=scores,
         confusions=[(r, e, s) for (r, e), s in ranked],
+        by_quality={quality: {'sampled_seconds': row['frames'] * hop,
+                             'accuracy': row['correct'] / row['frames']} for quality, row in qualities.items()},
+        boundaries=chord_boundary_f_measure(reference, estimate),
+        exact_chord=exact_hits / total if total else 0.0,
     )
 
 

@@ -41,13 +41,14 @@ def analyze_audio(
     max_seconds: Optional[float] = None,
     key_override: Optional[Key] = None,
     detect_inversions: bool = True,
-    snap_bars: bool = True,
+    snap_bars: bool = False,
     separate: Optional[bool] = None,
     separator: Optional["DemucsSeparator"] = None,
     tempo_override: Optional[float] = None,
     downbeat_offset: int = 0,
     beat_offset: Optional[float] = None,
     tracker: object = _USE_DEFAULT_TRACKER,
+    smooth_chords: bool = False,
 ) -> AnalysisResult:
     warnings: List[str] = []
 
@@ -73,7 +74,11 @@ def analyze_audio(
     # 특징 추출에서 자동/수동 우선순위를 확정한다. 기본 4박으로 다시 덮지 않는다.
     resolved_beats_per_bar = feats.beats_per_bar
     if feats.beat_source != "librosa":
-        warnings.append(f"비트·다운비트를 {feats.beat_source}로 추적 (librosa보다 정확)")
+        warnings.append(f"비트를 {feats.beat_source}로 추적")
+    if feats.beat_tracker_fallback:
+        warnings.append(f"{feats.beat_tracker_requested} 실행 실패로 librosa 사용 ({feats.beat_tracker_fallback})")
+    if feats.meter_source == "default":
+        warnings.append("박자표를 자동 판정하지 못해 기본 4박/마디로 표시합니다. 필요하면 박자를 직접 지정해 주세요.")
     # 사용자가 탭으로 격자를 확정했거나 마디 시작을 직접 민 경우에는
     # 아래의 자동 위상 보정을 돌리지 않는다.
     manual_downbeats = bool(tempo_override and beat_offset is not None) or bool(downbeat_offset)
@@ -144,7 +149,10 @@ def analyze_audio(
             chords, confidence, agreement = vote([p for _, p in pairs], key)
 
     predictions = [p for _, p in pairs]
-    chords = smooth_short_runs(chords, min_beats=2)
+    # 각 인식기가 이미 시간 방향 추론을 한다. 구간 길이만으로 정상적인
+    # 한 박 코드를 삭제하는 추가 보정은 기본값에서 제외한다.
+    if smooth_chords:
+        chords = smooth_short_runs(chords, min_beats=2)
 
     # 코드 변화로 마디 첫 박을 다시 정하는 보정을 넣었다가 뺐다.
     #
@@ -190,6 +198,9 @@ def analyze_audio(
         recognizers=[p.name for p in predictions],
         origin="audio",
         execution={"beat_tracker": feats.beat_source, "separated": feats.separated,
+                   "beat_tracker_requested": feats.beat_tracker_requested,
+                   "beat_tracker_fallback": feats.beat_tracker_fallback,
+                   "meter_source": feats.meter_source,
                    "recognizers": [p.name for p in predictions]},
         warnings=warnings,
     )

@@ -247,17 +247,24 @@ def cmd_subs(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
     from .analysis import analyze_audio
     from .evaluation import aggregate, evaluate_result
     from .tools.synth import generate_all
+    from .tools.chord_stress import generate_stress
+    from .beat_evaluation import environment, fingerprint
+    from .analysis.recognizers import default_recognizers
+    from .analysis.hierarchical import HierarchicalRecognizer
 
-    data_dir = Path(args.dir)
+    data_dir = Path(args.dir or ('data/chord-stress' if args.suite == 'stress' else 'data/demo'))
     wavs = sorted(data_dir.glob("*.wav"))
+    generated = not wavs
     if not wavs:
         print(f"{data_dir}에 음원이 없어 데모를 생성한다")
-        wavs = generate_all(data_dir)
+        wavs = generate_stress(data_dir) if args.suite == 'stress' else generate_all(data_dir)
 
     reports = []
+    details = []
     for wav in wavs:
         lab = wav.with_suffix(".lab")
         if not lab.exists():
@@ -266,9 +273,20 @@ def cmd_eval(args: argparse.Namespace) -> int:
         # 합성 음원에 소스 분리를 걸면 오히려 나빠진다 (Demucs는 실제 녹음으로
         # 학습돼서 합성음에 아티팩트를 만든다 — half_bar_changes 98.0% → 89.8%).
         # 벤치마크는 분리 없이 도는 게 기본이고, --separate로 강제할 수 있다.
-        result = analyze_audio(str(wav), vocabulary=args.vocabulary, separate=args.separate)
+        engines = None
+        if args.legacy_chords:
+            engines = default_recognizers(args.vocabulary, separated=args.separate)
+            for engine in engines:
+                if isinstance(engine, HierarchicalRecognizer):
+                    engine.quality_mode = 'legacy'
+        options = {'tracker': None} if args.tracker == 'librosa' else {}
+        result = analyze_audio(str(wav), vocabulary=args.vocabulary, separate=args.separate,
+            recognizers=engines, snap_bars=args.legacy_chords, smooth_chords=args.legacy_chords, **options)
         report = evaluate_result(result, lab, name=wav.stem)
         reports.append(report)
+        details.append({**asdict(report), 'audio_sha256': fingerprint(wav),
+            'reference_sha256': fingerprint(lab), 'execution': result.execution,
+            'segments': result.to_dict()['segments'], 'warnings': result.warnings})
         print(report.format())
         print()
 
@@ -276,9 +294,21 @@ def cmd_eval(args: argparse.Namespace) -> int:
         agg = aggregate(reports)
         print("─" * 72)
         print("전체 (길이 가중 평균): " + "  ".join(f"{k}={v * 100:5.1f}%" for k, v in agg.items()))
-        print("\n주의: 합성 음원 기준이라 실제 녹음보다 후하게 나온다. "
-              "실측은 M2에서 McGill Billboard로.")
-    return 0
+        print("\n주의: 합성·출처 미검증 평가를 실제 곡의 공식 성능으로 해석하지 마세요.")
+        if args.json_out:
+            destination = Path(args.json_out)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            payload = {'schema_version': 1, 'environment': environment(),
+                'recognizer_sha256': fingerprint(Path(__file__).parent / 'analysis/hierarchical.py'),
+                'pipeline_sha256': fingerprint(Path(__file__).parent / 'analysis/pipeline.py'),
+                'dataset_kind': 'synthetic' if generated else args.dataset_kind,
+                'settings': {'legacy_chords': args.legacy_chords, 'tracker_request': args.tracker,
+                             'vocabulary': args.vocabulary, 'separate': args.separate},
+                'aggregate': aggregate(reports), 'tracks': details}
+            destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+        return 0
+    print('정답이 있는 음원이 없어 평가하지 않았습니다.')
+    return 1
 
 
 def cmd_beateval(args: argparse.Namespace) -> int:
@@ -287,7 +317,7 @@ def cmd_beateval(args: argparse.Namespace) -> int:
 
     try:
         report = evaluate_tracks(args.dir, meter_mode=args.meter_mode, tracker=args.tracker,
-                                 regenerate=args.regenerate)
+                                 regenerate=args.regenerate, checkpoint=args.checkpoint)
     except ValueError as exc:
         print(f"평가 중단: {exc}")
         return 1
@@ -440,7 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_subs)
 
     p = sub.add_parser("eval", help="정확도 벤치마크")
-    p.add_argument("--dir", default="data/demo")
+    p.add_argument("--dir", default=None)
+    p.add_argument("--suite", choices=("demo", "stress"), default="demo", help="음원이 없는 디렉터리에 생성할 합성 세트")
+    p.add_argument("--legacy-chords", action="store_true", help="기존 근음 단위 품질 판정·짧은 코드 삭제·마디 스냅 재현")
+    p.add_argument("--tracker", choices=("auto", "librosa"), default="auto")
+    p.add_argument("--json-out", help="화음 종류별·전위 포함·경계 지표와 입력 해시 저장")
+    p.add_argument("--dataset-kind", choices=("synthetic", "unverified"), default="unverified")
     p.add_argument("--vocabulary", default="standard")
     p.add_argument("--separate", dest="separate", action="store_true", default=False,
                    help="소스 분리를 켜고 측정 (합성 음원에서는 오히려 나빠진다)")
@@ -451,8 +486,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--regenerate", action="store_true", help="음원을 다시 생성")
     p.add_argument("--meter-mode", choices=("auto", "reference"), default="auto",
                    help="auto: 정답 박자 미입력, reference: 정답 박자를 제공한 보조 평가")
-    p.add_argument("--tracker", choices=("auto", "librosa"), default="auto",
-                   help="추적기 자동 선택 또는 CPU librosa 기준선 고정")
+    p.add_argument("--tracker", choices=("auto", "librosa", "plp", "beat-this-model", "beat-this-legacy"), default="auto",
+                   help="CPU 후보 비교. 명시한 후보가 실패하면 폴백 점수로 대체하지 않음")
+    p.add_argument("--checkpoint", default="final0", help="beat_this 비교에 사용할 모델 이름 또는 로컬 체크포인트")
     p.add_argument("--json-out", help="음원 해시·실행 환경·예측 시각·지표를 JSON으로 저장")
     p.set_defaults(func=cmd_beateval)
 

@@ -262,11 +262,42 @@ JSON에는 음원 해시·생성 조건·엔진 소스 해시·설치 버전·�
 librosa 경로는 박자표 추정 대신 기본 4박을 사용하므로 자동 평가에도 이 한계가 반영됩니다.
 기존 6/8 이름의 표본은 합성기 6펄스 기준이며 실제 겹박자 해석의 평가를 대신하지 않습니다.
 
-테스트는 외부 YouTube 요청 없이 공급·권한·캐시·교정·API 동작을 검증합니다.
-합성 평가 5곡의 약 98.8%는 실제 음악 정확도의 증거가 아닙니다.
-비트 평가 16곡도 합성 데이터이고 정답 박자 정보를 입력하므로 자동 박자 추정 성능과 구분해야 합니다.
+후보 비교에는 `--tracker plp`, `--tracker beat-this-model`, `--tracker beat-this-legacy`를
+사용합니다. beat_this는 별도 설치와 체크포인트가 필요하며 `--checkpoint`로 로컬 파일도 지정할 수 있습니다.
+명시한 후보 실행이 실패하면 librosa의 점수를 그 후보 성능으로 보고하지 않고 중단합니다.
+`beat-this-model`은 모델 이벤트를 보존하고, `beat-this-legacy`는 기존 전역 간격·고정 마디 보정을 재현합니다.
+기본 엔진은 교체하지 않았습니다. PLP는 현재 16곡에서 더 낮았고 beat_this 실제 비교는
+공식 모델 파일 다운로드 HTTP 500으로 실행하지 못했습니다. 모의 모델 시험을 실제 성능으로 해석하지 마세요.
 
-기존 beat_this/librosa 및 템플릿·계층형 코드 인식 알고리즘은 이번 단계에서 유지했습니다.
+사이트의 **바로 보기 — 데모 음원 → 인식 검증 음원**을 열면 추가 합성 7곡을
+터치로 분석·재생하고 생성 시 정답과 비교할 수 있습니다. 기존 5곡과 별도 디렉터리에 생성합니다.
+같은 근음의 화음 종류 변화, 한 박·두 박·세 박마다 바뀌는 코드, 전위 코드를 포함합니다.
+현재 전위 표본에서는 근음·화음 종류 인식이 모두 실패하므로 이 버튼은 약점 확인용입니다.
+
+코드 비교를 다시 실행하려면 같은 디렉터리를 두 번 평가합니다.
+
+```bash
+python -m chordapp eval --suite stress --dir work/chord-stress --tracker librosa --dataset-kind synthetic --json-out work/chords-current.json
+python -m chordapp eval --suite stress --dir work/chord-stress --tracker librosa --dataset-kind synthetic --legacy-chords --json-out work/chords-legacy.json
+```
+
+JSON에는 음원·정답 해시, 실행 경로, 예측 구간, 화음 종류별 정확도, 전위 포함 일치율과
+코드 경계 F(±100ms)를 담습니다. `seventh`는 호환을 위해 유지한 이름이며 실제로는 내부 화음 종류
+전체를 비교합니다. 표준 MIREX seventh 축약 규칙과 다릅니다. 무주석 구간을 무화음 정답으로
+계산하지 않으며, 파싱에 실패한 정답 코드나 판정 불가 `X`는 오류로 안내합니다.
+파서가 축약하는 확장음 표기는 현재 내부 어휘 기준이며 모든 알터드 음을 평가하지는 못합니다.
+20ms 프레임 샘플 기반 평가이므로 매우 짧은 구간의 시간 가중에는 근사 오차가 있습니다.
+외부 음원은 기본적으로 `unverified`이며 사용자 전체 검수 없는 실제 곡을 공식 평가로 표시하지 않습니다.
+
+테스트는 외부 YouTube 요청 없이 공급·권한·캐시·교정·API 동작을 검증합니다.
+합성 평가 5곡·16곡의 수치는 실제 음악 정확도의 증거가 아닙니다.
+이번 코드 변경으로 기존 5곡 화음 종류 정확도는 98.8%→97.7%, 추가 7곡은 28.3%→71.1%였습니다.
+모두 길이 가중 평균이며, 한 박 코드 보존의 이득과 일부 화음 종류 오탐 증가를 함께 기록합니다.
+
+템플릿·근음 추론과 기본 박자 엔진은 유지했습니다. 계층형 인식기는 같은 근음 안에서도 화음 종류를
+바꾸며, 코드 길이만으로 한 박 코드를 지우거나 경계를 마디로 옮기는 처리는 기본값에서 제외했습니다.
+기존 처리는 비교용 `--legacy-chords`로 보존했습니다. 분석 버전은 6으로 올라 기존 캐시는
+새 결과로 다시 계산하며 사용자 교정은 별도로 유지합니다.
 추적기가 판단한 마디당 박 수를 구간 번호·결과·차트까지 보존하며, 수동 박자 지정이 자동 추정보다 우선합니다.
 자동으로 되돌리면 추적기의 박자를 다시 사용하고, 추정이 불가능한 경로에서는 기본 4박을 사용합니다.
 전체 곡 단일 조성·고정 박자 구조, 알터드 코드 인식 범위는 후속 과제입니다.
@@ -287,6 +318,8 @@ python tests/browser_fixture.py
 # 터미널 2: Playwright·브라우저가 설치된 환경
 node tests/browser_flow.cjs
 # 시스템 Chromium 사용 시: CHROMIUM_PATH=/usr/bin/chromium node tests/browser_flow.cjs
+# 새 검증 음원·실제 CPU 분석·재생·390/834px 터치 화면
+CHROMIUM_PATH=/usr/bin/chromium node tests/browser_stress_flow.cjs
 ```
 
 브라우저 도구가 없다면 `npm install --prefix work/browser-tools playwright`로 설치한 뒤

@@ -52,6 +52,12 @@ def test_explicit_librosa_baseline_bypasses_optional_model(fixture_run):
     assert calls[0]['tracker'] is None
 
 
+def test_requested_candidate_is_not_scored_when_it_falls_back(fixture_run):
+    run, _, _, _ = fixture_run
+    with pytest.raises(ValueError, match='폴백을 후보 성능으로 계산하지 않습니다'):
+        run(tracker='plp')
+
+
 def test_changed_audio_cannot_be_scored_against_stale_truth(fixture_run):
     run, calls, directory, _ = fixture_run
     run()
