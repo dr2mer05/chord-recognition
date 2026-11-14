@@ -178,6 +178,41 @@ def tempo_error(reference_bpm: float, estimate_bpm: float) -> Dict[str, float]:
     return {"ratio": ratio, "percent": percent, "octave": octave}
 
 
+def bar_interval_f_measure(reference: Sequence[float], estimate: Sequence[float],
+                           tolerance: float = BEAT_TOLERANCE) -> Dict[str, float]:
+    """연속한 두 마디 경계가 모두 맞아야 완전한 마디 하나를 맞힌 것으로 센다.
+
+    다운비트를 절반·두 배로 검출해도 경계 일부는 맞을 수 있으므로, 경계 F와
+    구간 F를 구분한다. 양 끝 경계가 없는 마지막 불완전 마디는 포함하지 않는다.
+    """
+    if not np.isfinite(tolerance) or tolerance < 0:
+        raise ValueError("허용 오차는 유한한 0 이상의 값이어야 합니다.")
+    values = []
+    for boundaries in (reference, estimate):
+        times = np.asarray(boundaries, dtype=float)
+        if times.ndim != 1 or not np.isfinite(times).all():
+            raise ValueError("마디 경계는 유한한 시각의 1차원 목록이어야 합니다.")
+        times = np.unique(times)  # 중복 경계로 길이 0인 마디를 만들지 않는다.
+        values.append(list(zip(times[:-1], times[1:])))
+    ref, est = values
+    i = j = hits = 0
+    while i < len(ref) and j < len(est):
+        start, end = ref[i]
+        other_start, other_end = est[j]
+        if abs(start - other_start) <= tolerance and abs(end - other_end) <= tolerance:
+            hits += 1
+            i += 1
+            j += 1
+        elif other_start < start - tolerance or other_end < end - tolerance:
+            j += 1
+        else:
+            i += 1
+    precision = hits / len(est) if est else 0.0
+    recall = hits / len(ref) if ref else 0.0
+    return {"f": 2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+            "precision": precision, "recall": recall, "n_ref": len(ref), "n_est": len(est)}
+
+
 def aggregate(reports: Sequence[EvalReport]) -> Dict[str, float]:
     """길이 가중 평균."""
     if not reports:

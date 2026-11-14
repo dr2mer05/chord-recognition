@@ -3,6 +3,9 @@
 음원의 코드 진행을 인식하고 로마숫자·화성 기능·대체 코드를 살펴보는 개인 학습용 웹앱입니다.
 FastAPI, HTML/JavaScript, SQLite를 사용하며 기본 분석은 Linux CPU에서 실행합니다.
 
+2026-11-14 사용자 결정으로 YouTube 음원 확보·Render 검증은 보류하고,
+박자·코드 인식의 평가와 개선을 우선합니다. [현재 개발 상태와 기준선](docs/development-status.md)을 참고하세요.
+
 ## 실행
 
 Python 3.12에서 검증한 CPU 의존성 조합을 제공합니다.
@@ -243,6 +246,21 @@ python -m pytest tests -q
 python -m chordapp eval
 python -m chordapp beateval
 ```
+
+`beateval`의 기본값은 정답 박자를 입력하지 않는 자동 평가입니다. 이전 명령은 정답의
+마디당 박 수를 미리 제공했으므로 이전 수치를 자동 박자 인식 성능과 직접 비교하면 안 됩니다.
+기존 평가 디렉터리에 생성 기록이 없으면 처음 한 번 `--regenerate`가 필요합니다.
+다음 두 조건을 같은 음원에서 비교할 수 있습니다.
+
+```bash
+python -m chordapp beateval --dir work/beat-baseline --regenerate --tracker librosa --json-out work/beat-auto.json
+python -m chordapp beateval --dir work/beat-baseline --meter-mode reference --tracker librosa --json-out work/beat-reference.json
+```
+
+JSON에는 음원 해시·생성 조건·엔진 소스 해시·설치 버전·예측 시각을 기록합니다.
+비트 F와 다운비트 F에 더해, 시작·끝 경계가 모두 맞는 마디 구간 F를 따로 계산합니다.
+librosa 경로는 박자표 추정 대신 기본 4박을 사용하므로 자동 평가에도 이 한계가 반영됩니다.
+기존 6/8 이름의 표본은 합성기 6펄스 기준이며 실제 겹박자 해석의 평가를 대신하지 않습니다.
 
 테스트는 외부 YouTube 요청 없이 공급·권한·캐시·교정·API 동작을 검증합니다.
 합성 평가 5곡의 약 98.8%는 실제 음악 정확도의 증거가 아닙니다.
