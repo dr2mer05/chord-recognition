@@ -4,7 +4,6 @@ from .cache import AnalysisCache, file_fingerprint
 from .chord_db import LocalJsonDatabase, NullDatabase
 from .pipeline import ChordService
 from .youtube import (
-    AudioFetchDisabled,
     InvalidVideoUrl,
     SearchUnavailable,
     VideoInfo,
@@ -22,7 +21,6 @@ __all__ = [
     "YouTubeError",
     "InvalidVideoUrl",
     "SearchUnavailable",
-    "AudioFetchDisabled",
     "file_fingerprint",
     "parse_video_id",
     "split_artist_title",

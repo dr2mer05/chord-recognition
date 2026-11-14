@@ -58,6 +58,9 @@ class AudioFeatures:
     # 서로 다른 오류 편향을 갖기 때문에 앙상블의 두 번째 의견으로 쓴다.
     beat_chroma_alt: Optional[np.ndarray] = None
     separated: bool = False
+    beat_tracker_requested: str = "librosa"
+    beat_tracker_fallback: Optional[str] = None
+    meter_source: str = "default"
 
 
 def load_audio(path: str, sr: int = SR, max_seconds: Optional[float] = None) -> Tuple[np.ndarray, int]:
@@ -73,7 +76,7 @@ def extract_features(
     path: str,
     sr: int = SR,
     max_seconds: Optional[float] = None,
-    beats_per_bar: int = 4,
+    beats_per_bar: Optional[int] = None,
     chroma_fmin: str = CHROMA_FMIN,
     chroma_octaves: int = CHROMA_OCTAVES,
     harmonic_paths: Optional[Sequence[str]] = None,
@@ -85,6 +88,9 @@ def extract_features(
 ) -> AudioFeatures:
     """`harmonic_paths`/`bass_path`를 주면 그 스템으로 크로마를 만든다.
 
+    `beats_per_bar=None`은 자동, 명시적인 값은 수동 지정이다.
+    수동 지정은 추적기보다 우선하며 비트 시각은 유지한다.
+
     `harmonic_paths`는 여러 스템을 받아 합친다. `other`(기타·건반)만 쓰면
     베이스가 빠져서 코드 근음 정보를 잃는다 — 실측에서 `other` 단독은 원본 믹스보다
     확신도가 오히려 낮았다(0.418 vs 0.433). `other + bass`(= 믹스에서 보컬·드럼만
@@ -95,6 +101,8 @@ def extract_features(
     """
     import librosa
 
+    meter_override = beats_per_bar
+    beats_per_bar = meter_override or 4
     y, sr = load_audio(path, sr=sr, max_seconds=max_seconds)
 
     if tracker is _USE_DEFAULT_TRACKER:
@@ -103,19 +111,33 @@ def extract_features(
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
     manual_grid = bool(tempo_override and beat_offset is not None)
 
-    # 더 나은 추적기(beat_this)가 있으면 그걸 쓴다. 사용자가 템포를 지정했거나
-    # 설치돼 있지 않으면 librosa로 간다.
+    # 설치된 선택 추적기를 사용한다. 사용자가 템포를 지정했거나 미설치이면
+    # librosa로 간다. 선택 여부는 정확도 우열을 의미하지 않는다.
     grid = None
+    requested_tracker = tracker.name if tracker is not None and not tempo_override else "librosa"
+    tracker_fallback = None
     if not tempo_override and tracker is not None:
         try:
-            grid = tracker.track(path)
-        except Exception:
+            raw_grid = tracker.track(path)
+            # 어댑터 외부 구현도 검증해 잘못된 시각·템포가 이후 분석으로 전파되지 않게 한다.
+            from .beat_tracker import BeatGrid
+            raw_grid = BeatGrid(raw_grid.beat_times, raw_grid.tempo, raw_grid.downbeat_times,
+                                raw_grid.beats_per_bar, raw_grid.source)
+            # 파일 전체를 추적하는 모델이라도 max_seconds로 지정한 분석 범위만 사용한다.
+            duration = len(y) / sr
+            clipped_beats = raw_grid.beat_times[raw_grid.beat_times < duration]
+            clipped_downbeats = (raw_grid.downbeat_times[raw_grid.downbeat_times < duration]
+                                 if raw_grid.downbeat_times is not None else None)
+            grid = BeatGrid(clipped_beats, raw_grid.tempo, clipped_downbeats,
+                            raw_grid.beats_per_bar, raw_grid.source)
+        except Exception as exc:
+            tracker_fallback = type(exc).__name__  # 경로·URL이 들어갈 수 있는 원문은 보관하지 않는다.
             grid = None
 
     if grid is not None:
         beat_times = np.asarray(grid.beat_times, dtype=float)
         tempo = grid.tempo
-        if grid.beats_per_bar:
+        if meter_override is None and grid.beats_per_bar:
             beats_per_bar = grid.beats_per_bar
     else:
         tempo, beat_frames = _beat_track(
@@ -177,11 +199,17 @@ def extract_features(
         phase = (first + downbeat_offset) % max(beats_per_bar, 1)
         downbeats = np.arange(phase, len(beat_times), max(beats_per_bar, 1), dtype=int)
     elif grid is not None and grid.downbeat_times is not None:
-        # 추적기가 다운비트를 직접 준다. 온셋 세기로 위상을 추측하던 자체
-        # 휴리스틱보다 이쪽이 훨씬 낫다.
+        # 추적기가 제공한 다운비트를 사용한다. 정확도는 별도 비교 평가한다.
         downbeats = grid.downbeat_indices(beats_per_bar=beats_per_bar)
-        if downbeat_offset:
-            downbeats = np.clip(downbeats + downbeat_offset, 0, len(beat_times) - 1)
+        if meter_override is not None:
+            # 수동 박자표로 다시 묶되 기존 첫 다운비트의 위치를 기준으로 한다.
+            # 비트 시각이나 추적 모델의 출력 자체는 수정하지 않는다.
+            first = int(downbeats[0]) if len(downbeats) else 0
+            phase = (first + downbeat_offset) % beats_per_bar
+            downbeats = np.arange(phase, len(beat_times), beats_per_bar, dtype=int)
+        elif downbeat_offset:
+            shifted = downbeats + downbeat_offset
+            downbeats = shifted[(shifted >= 0) & (shifted < len(beat_times))]
     else:
         downbeats = estimate_downbeats(
             y, sr, beat_times, beats_per_bar, onset_env=onset_env,
@@ -206,6 +234,10 @@ def extract_features(
         beat_chroma_alt=beat_chroma_alt,
         separated=separated,
         beat_source=grid.source if grid is not None else "librosa",
+        beat_tracker_requested=requested_tracker,
+        beat_tracker_fallback=tracker_fallback,
+        meter_source=("manual" if meter_override is not None else "tracker"
+                      if grid is not None and grid.beats_per_bar is not None else "default"),
     )
 
 

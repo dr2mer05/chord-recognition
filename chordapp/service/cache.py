@@ -48,6 +48,14 @@ class AnalysisCache:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
             con.executescript(_SCHEMA)
+            self._expire_metadata(con)
+
+    @staticmethod
+    def _expire_metadata(con: sqlite3.Connection) -> None:
+        con.execute("DELETE FROM analysis_cache WHERE namespace = 'video_search' AND created_at < ?",
+                    (time.time() - 60 * 60,))
+        con.execute("DELETE FROM analysis_cache WHERE namespace = 'video_metadata' AND created_at < ?",
+                    (time.time() - 24 * 60 * 60,))
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path)
@@ -60,10 +68,14 @@ class AnalysisCache:
         digest = hashlib.sha256(f"{identifier}|{opts}".encode("utf-8")).hexdigest()[:32]
         return f"{namespace}:{digest}"
 
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
+    def get(self, key: str, max_age: Optional[float] = None) -> Optional[Dict[str, Any]]:
         with self._connect() as con:
-            row = con.execute("SELECT payload FROM analysis_cache WHERE key = ?", (key,)).fetchone()
+            self._expire_metadata(con)
+            row = con.execute("SELECT payload, created_at FROM analysis_cache WHERE key = ?", (key,)).fetchone()
             if row is None:
+                return None
+            if max_age is not None and time.time() - row["created_at"] > max_age:
+                con.execute("DELETE FROM analysis_cache WHERE key = ?", (key,))
                 return None
             con.execute("UPDATE analysis_cache SET hits = hits + 1 WHERE key = ?", (key,))
         return json.loads(row["payload"])

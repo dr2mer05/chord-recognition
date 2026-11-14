@@ -61,11 +61,15 @@ class HierarchicalRecognizer(Recognizer):
         bass_weight: float = BASS_WEIGHT,
         detect_sevenths: bool = True,
         detect_tensions: bool = True,
+        quality_mode: str = "local",
     ):
+        if quality_mode not in {"local", "legacy"}:
+            raise ValueError("지원하지 않는 화음 종류 판정 모드입니다.")
         self.weight = weight
         self.bass_weight = bass_weight
         self.detect_sevenths = detect_sevenths
         self.detect_tensions = detect_tensions
+        self.quality_mode = quality_mode
 
     # -- 1단계: 근음 ---------------------------------------------------
     def _root_scores(self, feats: AudioFeatures) -> np.ndarray:
@@ -127,7 +131,8 @@ class HierarchicalRecognizer(Recognizer):
             sus_kind = "sus2"
 
         core = [at(P1), third_energy, fifth]
-        base = float(np.mean([c for c in core if c > 0]) or 1e-6)
+        positive_core = [c for c in core if c > 0]
+        base = float(np.mean(positive_core)) if positive_core else 1e-6
 
         # --- 5도 변화 ---
         # dim/aug는 대중음악에서 드물다. 5도 자리만 보고 쉽게 넘어가면
@@ -188,18 +193,25 @@ class HierarchicalRecognizer(Recognizer):
         chords: List[Chord] = [Chord(0, "maj")] * n_beats
         confidence = np.zeros(n_beats, dtype=np.float32)
 
-        # 품질은 **근음이 유지되는 구간마다 한 번** 정한다.
-        # 비트마다 정하면 7음이 문턱 근처에서 오르내려 F / Fmaj7 / F / Fmaj7 처럼
-        # 깜빡인다(실제로 그랬다). 근음이 같은 동안 코드 품질은 바뀌지 않으므로
-        # 구간 전체의 중앙값으로 한 번만 판단하면 안정적이고 신호대잡음비도 좋다.
+        # 근음이 유지돼도 C→C7→Cmaj7처럼 화음 종류는 바뀔 수 있다.
+        # 각 박의 품질 판정으로 경계를 찾은 뒤 같은 근음·품질 구간만 묶어 집계한다.
+        # 과거의 근음 구간 전체 중앙값 방식은 비교용 legacy 옵션으로 보존한다.
         for start, end in _runs(roots):
             root = int(roots[start])
-            column = np.median(chroma[:, start:end], axis=1)
-            quality, quality_conf = self._quality_for(column, root, feats.key)
-            chord = Chord(root, quality)
-            for i in range(start, end):
-                chords[i] = chord
-                confidence[i] = 0.65 * _margin(root_scores[:, i]) + 0.35 * quality_conf
+            if self.quality_mode == "legacy":
+                spans = [(0, end - start)]
+            else:
+                qualities = np.asarray([self._quality_for(chroma[:, i], root, feats.key)[0]
+                                        for i in range(start, end)])
+                spans = _runs(qualities)
+            for lo, hi in spans:
+                left, right = start + lo, start + hi
+                column = np.median(chroma[:, left:right], axis=1)
+                quality, quality_conf = self._quality_for(column, root, feats.key)
+                chord = Chord(root, quality)
+                for i in range(left, right):
+                    chords[i] = chord
+                    confidence[i] = 0.65 * _margin(root_scores[:, i]) + 0.35 * quality_conf
 
         return BeatPrediction(
             name=self.name, chords=chords, confidence=confidence, weight=self.weight

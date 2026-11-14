@@ -80,6 +80,8 @@ class AnalysisResult:
     # 표시 이름(source)은 바뀔 수 있으므로 그걸 키로 쓰면 안 된다.
     source_key: str = ""
     audio_path: str = ""         # 벤치마크에서 재분석할 때 필요
+    execution: Dict[str, Any] = field(default_factory=dict)
+    audio_link: Optional[Dict[str, Any]] = None
     corrected: int = 0           # 사용자가 고친 구간 수
 
     @property
@@ -121,6 +123,8 @@ class AnalysisResult:
             source_key=data.get("source_key", ""),
             audio_path=data.get("audio_path", ""),
             corrected=data.get("corrected", 0),
+            execution=data.get("execution", {}),
+            audio_link=data.get("audio_link"),
         )
 
     def bars(self) -> List[Dict[str, Any]]:
@@ -226,6 +230,8 @@ class AnalysisResult:
             "source_key": self.source_key,
             "audio_path": self.audio_path,
             "corrected": self.corrected,
+            "execution": self.execution,
+            "audio_link": self.audio_link,
             "duration": round(self.duration, 3),
             "tempo": round(self.tempo, 2),
             "key": self.key.name(),

@@ -1,0 +1,5 @@
+# 선택 기능. 기본 CPU 흐름에 필요하지 않다.
+# 사용 전 CPU 소요 시간과 모델 다운로드/저장 비용을 확인한다.
+beat_this>=1.1
+demucs
+# autochord / chord-extractor는 비교 평가가 필요할 때 별도 설치한다.

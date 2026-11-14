@@ -105,7 +105,6 @@ def _print_substitutions(service, result, args: argparse.Namespace) -> None:
 def cmd_config(args: argparse.Namespace) -> int:
     """설정이 제대로 잡혔는지 확인. 키 값 자체는 출력하지 않는다."""
     from .config import ENV_FILENAME, PROJECT_ROOT, status
-    from .service.youtube import YtDlpProvider
 
     info = status()
     print(f"\n설정 파일: {info['env_file']}  ({'있음' if info['env_file_exists'] else '없음'})")
@@ -116,11 +115,8 @@ def cmd_config(args: argparse.Namespace) -> int:
     print(f"\n  YOUTUBE_API_KEY       {key_state}")
     print(f"  → 유튜브 검색:        {'사용 가능' if info['youtube_api_key_set'] else '비활성'}")
 
-    provider = YtDlpProvider()
-    print(f"\n  CHORDAPP_ENABLE_YTDLP {'1 (켜짐)' if info['ytdlp_enabled'] else '없음 (꺼짐)'}")
-    print(f"  yt-dlp 실행파일       {provider.binary or '없음'}")
-    print(f"  → 유튜브 오디오 추출: {'사용 가능' if provider.enabled else '비활성'}")
-
+    from .service.private_youtube import PrivateYouTubeProvider
+    print(f"\n  개인 링크 분석: {PrivateYouTubeProvider().reason}")
     from .analysis.separation import ENABLE_ENV, default_separator
 
     sep = default_separator().status()
@@ -251,17 +247,24 @@ def cmd_subs(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
     from .analysis import analyze_audio
     from .evaluation import aggregate, evaluate_result
     from .tools.synth import generate_all
+    from .tools.chord_stress import generate_stress
+    from .beat_evaluation import environment, fingerprint
+    from .analysis.recognizers import default_recognizers
+    from .analysis.hierarchical import HierarchicalRecognizer
 
-    data_dir = Path(args.dir)
+    data_dir = Path(args.dir or ('data/chord-stress' if args.suite == 'stress' else 'data/demo'))
     wavs = sorted(data_dir.glob("*.wav"))
+    generated = not wavs
     if not wavs:
         print(f"{data_dir}에 음원이 없어 데모를 생성한다")
-        wavs = generate_all(data_dir)
+        wavs = generate_stress(data_dir) if args.suite == 'stress' else generate_all(data_dir)
 
     reports = []
+    details = []
     for wav in wavs:
         lab = wav.with_suffix(".lab")
         if not lab.exists():
@@ -270,9 +273,20 @@ def cmd_eval(args: argparse.Namespace) -> int:
         # 합성 음원에 소스 분리를 걸면 오히려 나빠진다 (Demucs는 실제 녹음으로
         # 학습돼서 합성음에 아티팩트를 만든다 — half_bar_changes 98.0% → 89.8%).
         # 벤치마크는 분리 없이 도는 게 기본이고, --separate로 강제할 수 있다.
-        result = analyze_audio(str(wav), vocabulary=args.vocabulary, separate=args.separate)
+        engines = None
+        if args.legacy_chords:
+            engines = default_recognizers(args.vocabulary, separated=args.separate)
+            for engine in engines:
+                if isinstance(engine, HierarchicalRecognizer):
+                    engine.quality_mode = 'legacy'
+        options = {'tracker': None} if args.tracker == 'librosa' else {}
+        result = analyze_audio(str(wav), vocabulary=args.vocabulary, separate=args.separate,
+            recognizers=engines, snap_bars=args.legacy_chords, smooth_chords=args.legacy_chords, **options)
         report = evaluate_result(result, lab, name=wav.stem)
         reports.append(report)
+        details.append({**asdict(report), 'audio_sha256': fingerprint(wav),
+            'reference_sha256': fingerprint(lab), 'execution': result.execution,
+            'segments': result.to_dict()['segments'], 'warnings': result.warnings})
         print(report.format())
         print()
 
@@ -280,65 +294,39 @@ def cmd_eval(args: argparse.Namespace) -> int:
         agg = aggregate(reports)
         print("─" * 72)
         print("전체 (길이 가중 평균): " + "  ".join(f"{k}={v * 100:5.1f}%" for k, v in agg.items()))
-        print("\n주의: 합성 음원 기준이라 실제 녹음보다 후하게 나온다. "
-              "실측은 M2에서 McGill Billboard로.")
-    return 0
+        print("\n주의: 합성·출처 미검증 평가를 실제 곡의 공식 성능으로 해석하지 마세요.")
+        if args.json_out:
+            destination = Path(args.json_out)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            payload = {'schema_version': 1, 'environment': environment(),
+                'recognizer_sha256': fingerprint(Path(__file__).parent / 'analysis/hierarchical.py'),
+                'pipeline_sha256': fingerprint(Path(__file__).parent / 'analysis/pipeline.py'),
+                'dataset_kind': 'synthetic' if generated else args.dataset_kind,
+                'settings': {'legacy_chords': args.legacy_chords, 'tracker_request': args.tracker,
+                             'vocabulary': args.vocabulary, 'separate': args.separate},
+                'aggregate': aggregate(reports), 'tracks': details}
+            destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+        return 0
+    print('정답이 있는 음원이 없어 평가하지 않았습니다.')
+    return 1
 
 
 def cmd_beateval(args: argparse.Namespace) -> int:
-    """비트·다운비트 추적을 여러 곡으로 평가한다.
+    """정답 박자 입력 여부를 분리하고 재현 가능한 합성 평가 보고서를 만든다."""
+    from .beat_evaluation import evaluate_tracks, format_report
 
-    한 곡을 보고 고치면 과적합된다. 템포 62~160, 3/4·4/4·6/8, 화성 리듬이
-    빠른 곡과 느린 곡을 고루 넣은 세트에서 재야 변경이 일반화되는지 알 수 있다.
-    """
-    import numpy as np
-
-    from .analysis.audio import extract_features
-    from .evaluation import BEAT_TOLERANCE, beat_f_measure, tempo_error
-    from .tools.synth import BEAT_EVAL_TRACKS, beat_grid, render_track, write_wav
-
-    out_dir = Path(args.dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    rows = []
-    for i, track in enumerate(BEAT_EVAL_TRACKS):
-        wav = out_dir / f"{track.name}.wav"
-        if not wav.exists() or args.regenerate:
-            audio, _ = render_track(track, seed=i)
-            write_wav(wav, audio)
-
-        beats_true, downs_true = beat_grid(track)
-        feats = extract_features(str(wav), beats_per_bar=track.beats_per_bar)
-        beats_est = list(feats.beat_times)
-        downs_est = [feats.beat_times[j] for j in np.atleast_1d(feats.downbeat_indices)
-                     if j < len(feats.beat_times)]
-
-        beat = beat_f_measure(beats_true, beats_est, BEAT_TOLERANCE)
-        down = beat_f_measure(downs_true, downs_est, BEAT_TOLERANCE)
-        tempo = tempo_error(track.bpm, feats.tempo)
-        rows.append((track, beat, down, tempo, feats))
-
-    print(f"\n비트 추적 평가 — {len(rows)}곡 (±{BEAT_TOLERANCE * 1000:.0f}ms 허용)\n")
-    print(f"  {'곡':<20}{'정답':>6}{'검출':>8}  {'비트F':>6}{'마디F':>6}  비고")
-    print("  " + "─" * 62)
-    for track, beat, down, tempo, feats in rows:
-        note = []
-        if tempo["octave"]:
-            note.append(f"템포 {tempo['ratio']:.2f}배")
-        elif tempo["percent"] > 3:
-            note.append(f"템포 {tempo['percent']:.0f}%")
-        if feats.beats_per_bar != track.beats_per_bar:
-            note.append(f"{feats.beats_per_bar}박 오인")
-        print(f"  {track.name:<20}{track.bpm:>6.0f}{feats.tempo:>8.1f}  "
-              f"{beat['f'] * 100:>5.0f}%{down['f'] * 100:>5.0f}%  {' '.join(note)}")
-
-    mean = lambda key, idx: sum(r[idx][key] for r in rows) / len(rows)
-    octaves = sum(1 for r in rows if r[3]["octave"])
-    meters = sum(1 for r in rows if r[4].beats_per_bar != r[0].beats_per_bar)
-    print("  " + "─" * 62)
-    print(f"  {'전체':<20}{'':>6}{'':>8}  {mean('f', 1) * 100:>5.0f}%{mean('f', 2) * 100:>5.0f}%")
-    print(f"\n  템포 배수 오류 {octaves}/{len(rows)} · 박자 오인 {meters}/{len(rows)}")
-    print(f"  추적기: {rows[0][4].beat_source}\n")
+    try:
+        report = evaluate_tracks(args.dir, meter_mode=args.meter_mode, tracker=args.tracker,
+                                 regenerate=args.regenerate, checkpoint=args.checkpoint)
+    except ValueError as exc:
+        print(f"평가 중단: {exc}")
+        return 1
+    print(format_report(report))
+    if args.json_out:
+        destination = Path(args.json_out)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+        print(f"\n평가 기록: {destination}")
     return 0
 
 
@@ -482,7 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_subs)
 
     p = sub.add_parser("eval", help="정확도 벤치마크")
-    p.add_argument("--dir", default="data/demo")
+    p.add_argument("--dir", default=None)
+    p.add_argument("--suite", choices=("demo", "stress"), default="demo", help="음원이 없는 디렉터리에 생성할 합성 세트")
+    p.add_argument("--legacy-chords", action="store_true", help="기존 근음 단위 품질 판정·짧은 코드 삭제·마디 스냅 재현")
+    p.add_argument("--tracker", choices=("auto", "librosa"), default="auto")
+    p.add_argument("--json-out", help="화음 종류별·전위 포함·경계 지표와 입력 해시 저장")
+    p.add_argument("--dataset-kind", choices=("synthetic", "unverified"), default="unverified")
     p.add_argument("--vocabulary", default="standard")
     p.add_argument("--separate", dest="separate", action="store_true", default=False,
                    help="소스 분리를 켜고 측정 (합성 음원에서는 오히려 나빠진다)")
@@ -491,6 +484,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("beateval", help="비트·다운비트 추적 평가 (여러 곡)")
     p.add_argument("--dir", default="data/beateval")
     p.add_argument("--regenerate", action="store_true", help="음원을 다시 생성")
+    p.add_argument("--meter-mode", choices=("auto", "reference"), default="auto",
+                   help="auto: 정답 박자 미입력, reference: 정답 박자를 제공한 보조 평가")
+    p.add_argument("--tracker", choices=("auto", "librosa", "plp", "beat-this-model", "beat-this-legacy"), default="auto",
+                   help="CPU 후보 비교. 명시한 후보가 실패하면 폴백 점수로 대체하지 않음")
+    p.add_argument("--checkpoint", default="final0", help="beat_this 비교에 사용할 모델 이름 또는 로컬 체크포인트")
+    p.add_argument("--json-out", help="음원 해시·실행 환경·예측 시각·지표를 JSON으로 저장")
     p.set_defaults(func=cmd_beateval)
 
     p = sub.add_parser("corrections", help="사용자 교정 현황")
