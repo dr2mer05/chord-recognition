@@ -305,6 +305,12 @@
         <p id="analysisOrigin" class="hint"></p>
         <div id="playerStatus" class="hint err" role="status"></div>
         <div id="warnings"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="downloadComparison" type="button" disabled>비교 데이터 저장</button>
+          <button id="copyComparison" type="button" disabled>비교 데이터 복사</button>
+          <span id="comparisonExportStatus" class="hint" role="status"></span>
+        </div>
+        <p class="hint">분석한 박자·코드 데이터를 파일로 저장해 대화에 첨부할 수 있습니다. 음원은 포함되지 않습니다.</p>
       </div>
       <div>
         <h2>코드 차트 <span class="hint" style="text-transform:none">— 박을 누르면 해당 위치로 이동</span></h2>
@@ -680,6 +686,8 @@ function clearAnalysis() {
   ['resultPanel', 'beatPanel', 'fixPanel', 'subPanel'].forEach(id => $(id).classList.add('hidden'));
   state.sourceKey = ''; state.reload = null; state.videoId = null;
   state.segments = []; state.rows = []; state.activeSegment = -1;
+  state.exportData = null;
+  $('downloadComparison').disabled = true; $('copyComparison').disabled = true;
 }
 
 async function analyzeYouTube() {
@@ -818,6 +826,8 @@ $('goprog').onclick = async () => {
     $('meta').innerHTML = '';
     $('warnings').innerHTML = '';
     state.segments = [];
+    state.exportData = null;
+    $('downloadComparison').disabled = true; $('copyComparison').disabled = true;
     // 직접 입력한 진행에는 원본 음원이 없으니 교정·박자 조정 대상이 아니다
     state.sourceKey = '';
     state.corrections = [];
@@ -834,6 +844,9 @@ $('goprog').onclick = async () => {
 
 /* ---------- 결과 렌더 ---------- */
 function render(data, elapsed) {
+  state.exportData = comparisonExport(data);
+  $('downloadComparison').disabled = false; $('copyComparison').disabled = false;
+  $('comparisonExportStatus').textContent = '';
   state.canReanalyzeSaved = data.can_reanalyze_saved !== false;
   const origin = (data.cached ? '저장된 결과 · ' : '') + ({ cache: '이전 캐시', database: '코드 DB 참고 진행', audio: '오디오 분석' }[data.origin] || data.origin);
   $('meta').innerHTML = [
@@ -886,6 +899,50 @@ function render(data, elapsed) {
   renderChart(data.analysis, data.segments, data.bars);
   $('resultPanel').classList.remove('hidden');
 }
+
+function comparisonExport(data) {
+  const pick = (item, keys) => Object.fromEntries(keys.filter(k => item && item[k] !== undefined).map(k => [k, item[k]]));
+  return {
+    format: 'chord-analysis-lab-comparison', version: 1,
+    note: '앱의 분석 및 사용자 교정 결과입니다. 실제 음원 정답이나 독립 검수 결과가 아닙니다.',
+    name: String(data.source || '').split(/[\\/]/).pop(),
+    duration_seconds: data.duration, tempo_bpm: data.tempo, key: data.key,
+    beats_per_bar: data.beats_per_bar,
+    tempo_override_bpm: data.tempo_override ?? null,
+    meter_override: data.meter_override ?? null,
+    downbeat_offset_beats: data.downbeat_offset ?? 0,
+    video_offset_seconds: data.audio_link?.video_offset ?? null,
+    display_sync_offset_seconds: state.syncOffset,
+    meter_is_default: (data.warnings || []).some(w => w.includes('기본 4박/마디')),
+    verified_by_user: !!data.verified,
+    recognizers: data.recognizers || [],
+    beats_seconds: data.beat_times || [], downbeats_seconds: data.downbeats || [],
+    segments: (data.segments || []).map(s => pick(s, ['start','end','chord','confidence','agreement','bar','beat'])),
+    corrections: (data.corrections || []).map(c => pick(c, ['start','end','chord','original'])),
+    bars: (data.bars || []).map(b => ({...pick(b, ['bar','start','end','beats_per_bar']),
+      slots: (b.slots || []).map(s => pick(s, ['beat','index','start','end','chord','roman','held']))}))
+  };
+}
+
+$('downloadComparison').onclick = () => {
+  if (!state.exportData) return;
+  const blob = new Blob([JSON.stringify(state.exportData, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = 'chord-analysis-comparison.json';
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  $('comparisonExportStatus').textContent = '파일 다운로드를 요청했습니다. 파일 앱에서 확인해 주세요.';
+};
+$('copyComparison').onclick = async () => {
+  if (!state.exportData) return;
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(state.exportData, null, 2));
+    $('comparisonExportStatus').textContent = '복사했습니다. 대화에 붙여넣어 주세요.';
+  } catch (_) {
+    $('comparisonExportStatus').textContent = '복사할 수 없습니다. 비교 데이터 저장을 이용해 주세요.';
+  }
+};
 
 function renderChart(rows, segments, bars) {
   state.rows = rows;
