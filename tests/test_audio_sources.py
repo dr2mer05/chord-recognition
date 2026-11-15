@@ -267,6 +267,38 @@ def test_delete_saved_record_does_not_restore_from_cache_or_remove_audio(client,
     assert client.delete('/api/saved-analyses/' + report['saved_id']).status_code == 404
 
 
+def test_rename_saved_analysis_preserves_original_audio_and_corrections(client, setup, monkeypatch):
+    service, _, _, calls, _ = setup
+    response = client.post('/api/analyze', files={'file': ('원본.wav', audio_bytes(), 'audio/wav')})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    saved = report['saved_id']
+    assert client.post('/api/corrections', json={'source_key': report['source_key'], 'start': 0, 'end': 2,
+                                                 'chord': 'Am', 'original': 'C'}).status_code == 200
+    assert client.patch('/api/saved-analyses/' + saved, json={'name': '  0+0  '}).json()['name'] == '0+0'
+    monkeypatch.setattr(service, 'cache', AnalysisCache(service.cache.db_path))
+    assert client.get('/api/saved-analyses').json()['analyses'][0]['name'] == '0+0'
+    reopened = client.get('/api/saved-analyses/' + saved).json()
+    assert reopened['source'] == '0+0' and reopened['segments'][0]['chord'] == 'Am'
+    assert reopened['source_key'] == report['source_key']
+    assert client.get(reopened['audio_url']).status_code == 200
+    assert len(calls) == 1
+    assert client.patch('/api/saved-analyses/' + saved, json={'name': '  '}).status_code == 400
+    assert client.patch('/api/saved-analyses/missing', json={'name': 'x'}).status_code == 404
+
+
+def test_saved_analysis_schema_upgrade_keeps_old_rows(tmp_path):
+    import sqlite3
+    db_path = tmp_path / 'old.sqlite3'
+    with sqlite3.connect(db_path) as db:
+        db.execute('CREATE TABLE saved_analyses (id TEXT PRIMARY KEY, payload TEXT NOT NULL, audio_name TEXT NOT NULL, created_at REAL NOT NULL)')
+        db.execute("INSERT INTO saved_analyses VALUES ('old', '{}', 'a.wav', 1)")
+    cache = AnalysisCache(db_path)
+    assert cache.saved_analysis('old')['label'] is None
+    assert cache.rename_saved_analysis('old', '이름')
+    assert cache.saved_analysis('old')['label'] == '이름'
+
+
 def test_delete_legacy_recovery_stays_deleted_after_restart(client, setup, monkeypatch):
     from chordapp.api import server
     service = setup[0]

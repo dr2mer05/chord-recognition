@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS saved_analyses (
     id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     audio_name TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    label TEXT
 );
 CREATE TABLE IF NOT EXISTS deleted_saved_analyses (
     source_key TEXT NOT NULL,
@@ -59,6 +60,9 @@ class AnalysisCache:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
             con.executescript(_SCHEMA)
+            columns = {row['name'] for row in con.execute('PRAGMA table_info(saved_analyses)')}
+            if 'label' not in columns:
+                con.execute('ALTER TABLE saved_analyses ADD COLUMN label TEXT')
             self._expire_metadata(con)
 
     @staticmethod
@@ -79,10 +83,10 @@ class AnalysisCache:
         digest = hashlib.sha256(f"{identifier}|{opts}".encode("utf-8")).hexdigest()[:32]
         return f"{namespace}:{digest}"
 
-    def save_analysis(self, identifier: str, payload: Dict[str, Any], audio_name: str, created_at: Optional[float] = None) -> None:
+    def save_analysis(self, identifier: str, payload: Dict[str, Any], audio_name: str, created_at: Optional[float] = None, label: Optional[str] = None) -> None:
         with self._connect() as con:
-            con.execute("INSERT OR IGNORE INTO saved_analyses (id, payload, audio_name, created_at) VALUES (?, ?, ?, ?)",
-                        (identifier, json.dumps(payload, ensure_ascii=False), audio_name, created_at or time.time()))
+            con.execute("INSERT OR IGNORE INTO saved_analyses (id, payload, audio_name, created_at, label) VALUES (?, ?, ?, ?, ?)",
+                        (identifier, json.dumps(payload, ensure_ascii=False), audio_name, created_at or time.time(), label))
 
     def saved_analyses(self):
         with self._connect() as con:
@@ -92,6 +96,11 @@ class AnalysisCache:
         with self._connect() as con:
             row = con.execute("SELECT * FROM saved_analyses WHERE id = ?", (identifier,)).fetchone()
             return dict(row) if row else None
+
+    def rename_saved_analysis(self, identifier: str, label: str) -> bool:
+        with self._connect() as con:
+            result = con.execute('UPDATE saved_analyses SET label = ? WHERE id = ?', (label, identifier))
+            return result.rowcount > 0
 
     def deleted_saved_keys(self):
         with self._connect() as con:

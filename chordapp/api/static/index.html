@@ -94,7 +94,6 @@
   .chip.sel { outline: 1px solid var(--accent2); }
   .chip .name { font-size: 15px; font-weight: 650; letter-spacing: -0.3px; white-space: nowrap; }
   .chip .roman { color: var(--dim); font-size: 10.5px; }
-  .chip .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); width: 0; }
   /* 앞 마디에서 이어진 코드는 흐리게 — 새로 친 코드와 구별한다 */
   /* 확신도 3단계. 실제 녹음은 대부분 mid 이하로 나오므로 이진 표시로는 정보가 안 된다. */
   .chip.mid .name::after { content: "·"; color: var(--dim); font-size: 12px; vertical-align: super; }
@@ -718,7 +717,7 @@ async function refreshSavedAnalyses() {
   try {
     const data = await getJSON('/api/saved-analyses');
     $('savedAnalyses').innerHTML = data.analyses.length ? data.analyses.map((item, i) =>
-      `<div class="row"><span>${esc(item.name)} · ${Number(item.duration).toFixed(1)}초${item.audio_available ? '' : ' · 음원 없음'}</span> <button type="button" data-saved-index="${i}">다시 열기</button> <button type="button" data-delete-saved="${i}" aria-label="${esc(item.name)} 분석 기록 삭제">삭제</button></div>`).join('') : '저장된 분석이 없습니다.';
+      `<div class="row"><span>${esc(item.name)} · ${Number(item.duration).toFixed(1)}초${item.audio_available ? '' : ' · 음원 없음'}</span> <button type="button" data-saved-index="${i}">다시 열기</button> <button type="button" data-rename-saved="${i}" aria-label="${esc(item.name)} 이름 변경">이름 변경</button> <button type="button" data-delete-saved="${i}" aria-label="${esc(item.name)} 분석 기록 삭제">삭제</button></div>`).join('') : '저장된 분석이 없습니다.';
     $('savedAnalyses').querySelectorAll('[data-saved-index]').forEach(button => {
       button.onclick = async () => {
         const item = data.analyses[+button.dataset.savedIndex];
@@ -728,6 +727,24 @@ async function refreshSavedAnalyses() {
           await open();
           setText('fileStatus', '저장된 분석을 열었습니다.');
         } catch (e) { setText('fileStatus', esc(e.message), true); }
+      };
+    });
+    $('savedAnalyses').querySelectorAll('[data-rename-saved]').forEach(button => {
+      button.onclick = async () => {
+        const item = data.analyses[+button.dataset.renameSaved];
+        const name = window.prompt('분석 결과의 새 이름을 입력해 주세요.', item.name);
+        if (name === null) return;
+        button.disabled = true;
+        try {
+          const response = await fetch('/api/saved-analyses/' + encodeURIComponent(item.id), {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(apiError(result, response.status));
+          setText('fileStatus', '분석 이름을 변경했습니다.');
+          if (state.openedSavedId === item.id) await state.reload();
+          await refreshSavedAnalyses();
+        } catch (e) { setText('fileStatus', esc(e.message), true); button.disabled = false; }
       };
     });
     $('savedAnalyses').querySelectorAll('[data-delete-saved]').forEach(button => {
@@ -900,14 +917,13 @@ function renderChart(rows, segments, bars) {
       const span = `data-i="${s.index}" data-start="${start}" data-end="${end}" data-edit-end="${editEnd}"`;
       if (s.chord === null) {   // 앞 박에서 이어지는 칸
         return `<div class="chip cont" ${span} title="${esc(title)}">
-          <div class="name">/</div><div class="bar"></div></div>`;
+          <div class="name">/</div></div>`;
       }
       const grade = s.grade && s.grade !== 'high' ? ' ' + s.grade : '';
       const held = s.held ? ' held' : '';
       return `<div class="chip${grade}${held}" ${span} title="${esc(title)}">
         <div class="name">${esc(s.chord)}</div>
-        <div class="roman">${esc(s.roman || '')}</div>
-        <div class="bar"></div></div>`;
+        <div class="roman">${esc(s.roman || '')}</div></div>`;
     }).join('');
     const cols = bar.beats_per_bar || bar.slots.length;
     return `<div class="measure"><div class="no">${bar.bar}</div>
@@ -1456,14 +1472,11 @@ function highlight(t) {
   if (state.activeChip !== chip) {
     if (state.activeChip) {
       state.activeChip.classList.remove('on');
-      state.activeChip.querySelector('.bar').style.width = '0';
     }
     state.activeChip = chip;
   }
   if (chip) {
-    const start = +chip.dataset.start, end = +chip.dataset.end;
     chip.classList.add('on');
-    chip.querySelector('.bar').style.width = Math.max(0, Math.min(100, (t - start) / Math.max(end - start, .001) * 100)) + '%';
   }
 }
 

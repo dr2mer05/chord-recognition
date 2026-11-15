@@ -430,7 +430,7 @@ def saved_analyses() -> JSONResponse:
     for row in service.cache.saved_analyses():
         try:
             payload = json.loads(row['payload'])
-            entries.append({'id': row['id'], 'name': payload.get('source', '이름 없는 음원'),
+            entries.append({'id': row['id'], 'name': row['label'] or payload.get('source', '이름 없는 음원'),
                             'duration': payload.get('duration', 0), 'created_at': row['created_at'],
                             'audio_available': (UPLOAD_DIR / row['audio_name']).is_file()})
         except (ValueError, TypeError):
@@ -447,6 +447,8 @@ def open_saved_analysis(identifier: str) -> JSONResponse:
     result = AnalysisResult.from_dict(snapshot)
     result.cached = True
     report = service.full_report(result)
+    if row['label']:
+        report['source'] = row['label']
     report.update(snapshot.get('_grid_state', {'tempo_override': None, 'meter_override': None, 'downbeat_offset': 0}))
     report['can_reanalyze_saved'] = '_analysis_options' in snapshot and (UPLOAD_DIR / row['audio_name']).is_file()
     if '_grid_state' not in snapshot:
@@ -465,6 +467,20 @@ def delete_saved_analysis(identifier: str) -> JSONResponse:
     if not service.cache.delete_saved_analysis(identifier):
         raise HTTPException(404, '저장된 분석을 찾을 수 없습니다.')
     return JSONResponse({'deleted': True})
+
+
+class SavedAnalysisRename(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+@app.patch('/api/saved-analyses/{identifier}')
+def rename_saved_analysis(identifier: str, req: SavedAnalysisRename) -> JSONResponse:
+    label = req.name.strip()
+    if not label or any(ord(char) < 32 for char in label):
+        raise HTTPException(400, '이름을 한 글자 이상 입력해 주세요.')
+    if not service.cache.rename_saved_analysis(identifier, label):
+        raise HTTPException(404, '저장된 분석을 찾을 수 없습니다.')
+    return JSONResponse({'name': label})
 
 
 @app.post('/api/saved-analyses/{identifier}/reanalyze')
@@ -486,8 +502,10 @@ def reanalyze_saved_analysis(identifier: str) -> JSONResponse:
     snapshot = result.to_dict()
     snapshot['_analysis_options'] = options
     snapshot['_grid_state'] = _snapshot_grid(result)
-    service.cache.save_analysis(saved_id, snapshot, path.name)
+    service.cache.save_analysis(saved_id, snapshot, path.name, label=row['label'])
     report = service.full_report(result)
+    if row['label']:
+        report['source'] = row['label']
     report['saved_id'] = saved_id
     report['audio_url'] = f'/api/audio/{path.name}'
     return JSONResponse(report)
