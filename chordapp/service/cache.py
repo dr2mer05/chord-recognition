@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS saved_analyses (
     audio_name TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS deleted_saved_analyses (
+    source_key TEXT NOT NULL,
+    audio_name TEXT NOT NULL,
+    PRIMARY KEY (source_key, audio_name)
+);
 """
 
 
@@ -87,6 +92,22 @@ class AnalysisCache:
         with self._connect() as con:
             row = con.execute("SELECT * FROM saved_analyses WHERE id = ?", (identifier,)).fetchone()
             return dict(row) if row else None
+
+    def deleted_saved_keys(self):
+        with self._connect() as con:
+            return {(row['source_key'], row['audio_name']) for row in
+                    con.execute('SELECT source_key, audio_name FROM deleted_saved_analyses')}
+
+    def delete_saved_analysis(self, identifier: str) -> bool:
+        with self._connect() as con:
+            row = con.execute('SELECT payload, audio_name FROM saved_analyses WHERE id = ?', (identifier,)).fetchone()
+            if row is None:
+                return False
+            source_key = json.loads(row['payload']).get('source_key', '')
+            con.execute('INSERT OR IGNORE INTO deleted_saved_analyses (source_key, audio_name) VALUES (?, ?)',
+                        (source_key, row['audio_name']))
+            con.execute('DELETE FROM saved_analyses WHERE id = ?', (identifier,))
+            return True
 
     def legacy_audio_entries(self):
         with self._connect() as con:

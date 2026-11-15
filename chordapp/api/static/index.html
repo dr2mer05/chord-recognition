@@ -718,7 +718,7 @@ async function refreshSavedAnalyses() {
   try {
     const data = await getJSON('/api/saved-analyses');
     $('savedAnalyses').innerHTML = data.analyses.length ? data.analyses.map((item, i) =>
-      `<div class="row"><span>${esc(item.name)} · ${Number(item.duration).toFixed(1)}초${item.audio_available ? '' : ' · 음원 없음'}</span> <button type="button" data-saved-index="${i}">다시 열기</button></div>`).join('') : '저장된 분석이 없습니다.';
+      `<div class="row"><span>${esc(item.name)} · ${Number(item.duration).toFixed(1)}초${item.audio_available ? '' : ' · 음원 없음'}</span> <button type="button" data-saved-index="${i}">다시 열기</button> <button type="button" data-delete-saved="${i}" aria-label="${esc(item.name)} 분석 기록 삭제">삭제</button></div>`).join('') : '저장된 분석이 없습니다.';
     $('savedAnalyses').querySelectorAll('[data-saved-index]').forEach(button => {
       button.onclick = async () => {
         const item = data.analyses[+button.dataset.savedIndex];
@@ -730,6 +730,21 @@ async function refreshSavedAnalyses() {
         } catch (e) { setText('fileStatus', esc(e.message), true); }
       };
     });
+    $('savedAnalyses').querySelectorAll('[data-delete-saved]').forEach(button => {
+      button.onclick = async () => {
+        const item = data.analyses[+button.dataset.deleteSaved];
+        if (!window.confirm(`「${item.name}」 분석 기록을 삭제할까요?\n음원 파일과 교정 기록은 보관됩니다.`)) return;
+        button.disabled = true;
+        try {
+          const response = await fetch('/api/saved-analyses/' + encodeURIComponent(item.id), {method: 'DELETE'});
+          const result = await response.json();
+          if (!response.ok) throw new Error(apiError(result, response.status));
+          if (state.openedSavedId === item.id) { clearAnalysis(); state.openedSavedId = null; }
+          setText('fileStatus', '분석 기록을 삭제했습니다.');
+          await refreshSavedAnalyses();
+        } catch (e) { setText('fileStatus', esc(e.message), true); button.disabled = false; }
+      };
+    });
   } catch (e) { $('savedAnalyses').textContent = '저장된 분석을 불러오지 못했습니다.'; }
 }
 function savedAnalysisLoader(initialId) {
@@ -738,6 +753,7 @@ function savedAnalysisLoader(initialId) {
     const url = '/api/saved-analyses/' + encodeURIComponent(id);
     const report = reanalyze ? await postJSON(url + '/reanalyze', {}) : await getJSON(url);
     if (report.saved_id) id = report.saved_id;
+    state.openedSavedId = id;
     render(report, 0);
   };
 }
@@ -759,6 +775,7 @@ $('goFile').onclick = async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(apiError(data, res.status));
     state.reload = savedAnalysisLoader(data.saved_id);
+    state.openedSavedId = data.saved_id;
     render(data, (performance.now() - t0) / 1000);
     setText('fileStatus', '');
     if ($('savedAnalysesPanel').open) refreshSavedAnalyses();

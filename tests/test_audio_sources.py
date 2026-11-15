@@ -256,6 +256,31 @@ def test_legacy_cache_recovers_when_local_audio_still_exists(client, setup, tmp_
     assert len(calls) == 1
 
 
+def test_delete_saved_record_does_not_restore_from_cache_or_remove_audio(client, setup):
+    response = client.post('/api/analyze', files={'file': ('원본.wav', audio_bytes(), 'audio/wav')})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert client.delete('/api/saved-analyses/' + report['saved_id']).status_code == 200
+    assert client.get('/api/saved-analyses/' + report['saved_id']).status_code == 404
+    assert client.get('/api/saved-analyses').json()['analyses'] == []
+    assert client.get(report['audio_url']).status_code == 200
+    assert client.delete('/api/saved-analyses/' + report['saved_id']).status_code == 404
+
+
+def test_delete_legacy_recovery_stays_deleted_after_restart(client, setup, monkeypatch):
+    from chordapp.api import server
+    service = setup[0]
+    server.UPLOAD_DIR.mkdir()
+    path = server.UPLOAD_DIR / 'old.wav'
+    path.write_bytes(audio_bytes())
+    service.analyze_file(path)
+    saved_id = client.get('/api/saved-analyses').json()['analyses'][0]['id']
+    assert client.delete('/api/saved-analyses/' + saved_id).status_code == 200
+    monkeypatch.setattr(service, 'cache', AnalysisCache(service.cache.db_path))
+    assert client.get('/api/saved-analyses').json()['analyses'] == []
+    assert path.exists()
+
+
 def test_api_register_analyze_correct_reopen_and_revoke(client, setup):
     response = upload(client)
     assert response.status_code == 201

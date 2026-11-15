@@ -399,7 +399,7 @@ async def analyze(
 
 def _recover_legacy_local_analyses() -> None:
     """기존 캐시 중 남아 있는 로컬 파일의 결과를 보존한다."""
-    existing = set()
+    existing = service.cache.deleted_saved_keys()
     for row in service.cache.saved_analyses():
         try:
             existing.add((json.loads(row['payload']).get('source_key'), row['audio_name']))
@@ -458,6 +458,13 @@ def open_saved_analysis(identifier: str) -> JSONResponse:
         service._register(result)
         report['audio_url'] = f'/api/audio/{path.name}'
     return JSONResponse(report)
+
+
+@app.delete('/api/saved-analyses/{identifier}')
+def delete_saved_analysis(identifier: str) -> JSONResponse:
+    if not service.cache.delete_saved_analysis(identifier):
+        raise HTTPException(404, '저장된 분석을 찾을 수 없습니다.')
+    return JSONResponse({'deleted': True})
 
 
 @app.post('/api/saved-analyses/{identifier}/reanalyze')
