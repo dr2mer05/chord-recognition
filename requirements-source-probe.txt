@@ -1,0 +1,5 @@
+# 음원 확보만 검증한다. 분석 엔진·API 키·계정 쿠키·PO 공급 서버는 포함하지 않는다.
+yt-dlp[default]==2026.10.26
+yt-dlp-ejs==0.8.0
+imageio-ffmpeg==0.6.0
+deno==2.9.8

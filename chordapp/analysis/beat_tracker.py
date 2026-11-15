@@ -1,20 +1,8 @@
-"""비트·다운비트 추적기.
+"""비트·다운비트 추적기 어댑터와 비교용 기준선.
 
-librosa 기본 추적기는 이 용도에 한계가 뚜렷하다.
-
-  1. **템포 배수를 고정 사전확률로 정한다.** `start_bpm`이 기본 120이라 느린
-     발라드는 배음으로 끌려간다(69 BPM 곡을 136으로). 그렇다고 90으로 낮추면
-     이번엔 빠른 곡이 절반이 된다(130 BPM 곡을 89로). 실측 5곡에서 어느 쪽도
-     3/5를 못 넘겼다 — **고정 사전확률로는 원리적으로 해결되지 않는다.**
-  2. **다운비트를 아예 안 준다.** 온셋 세기로 위상을 고르는 자체 휴리스틱을
-     붙였는데, 합성음에서는 맞아도 실제 녹음에서는 자주 어긋난다.
-  3. **박자표를 안 준다.**
-
-`beat_this`(ISMIR 2024, 트랜스포머)는 셋을 한 번에 해결한다. 실측에서 위 5곡의
-템포를 모두 맞혔고 다운비트도 함께 낸다. GPU에서 4분 곡이 1~3초.
-
-**설치 조건**: `beat_this`는 Python 3.10+ 문법을 쓴다. 3.9에서는 import 자체가
-실패하므로 자동으로 librosa로 폴백한다. 파이썬을 올리면 그 순간부터 켜진다.
+librosa DP/PLP는 박자표·다운비트를 제공하지 않는다. beat_this는 두 이벤트의
+시각을 제공하며 박자표는 별도 해석이다. 특정 모델의 우열은 동일 데이터에서
+검증해야 한다. 기존 전역 보정은 기준선으로 보존하고 원출력 보존 모드를 제공한다.
 """
 
 from __future__ import annotations
@@ -34,6 +22,22 @@ class BeatGrid:
     downbeat_times: Optional[np.ndarray] = None
     beats_per_bar: Optional[int] = None
     source: str = "librosa"
+
+    def __post_init__(self):
+        self.beat_times = np.asarray(self.beat_times, dtype=float)
+        if (self.beat_times.ndim != 1 or self.beat_times.size < 2
+                or not np.isfinite(self.beat_times).all() or self.beat_times[0] < 0
+                or np.any(np.diff(self.beat_times) <= 0)):
+            raise ValueError("비트 시각은 증가하는 유한한 비음수 목록이어야 합니다.")
+        if not np.isfinite(self.tempo) or self.tempo <= 0:
+            raise ValueError("템포는 유한한 양수여야 합니다.")
+        if self.beats_per_bar is not None and (self.beats_per_bar < 1 or int(self.beats_per_bar) != self.beats_per_bar):
+            raise ValueError("마디당 박 수는 양의 정수여야 합니다.")
+        if self.downbeat_times is not None:
+            self.downbeat_times = np.asarray(self.downbeat_times, dtype=float)
+            if (self.downbeat_times.ndim != 1 or not np.isfinite(self.downbeat_times).all()
+                    or np.any(self.downbeat_times < 0) or np.any(np.diff(self.downbeat_times) <= 0)):
+                raise ValueError("다운비트 시각은 증가하는 유한한 비음수 목록이어야 합니다.")
 
     def downbeat_indices(self, fallback_phase: int = 0, beats_per_bar: int = 4) -> np.ndarray:
         """다운비트를 beat_times 안의 인덱스로. 추적기가 안 주면 위상만 적용."""
@@ -55,13 +59,19 @@ class BeatTracker(Protocol):
 
 
 class BeatThisTracker:
-    """beat_this (ISMIR 2024). 비트·다운비트·박자표를 한 번에 준다."""
+    """beat_this 비트·다운비트 연결. legacy 보정과 모델 출력 보존을 비교한다."""
 
     name = "beat_this"
 
-    def __init__(self, device: Optional[str] = None, dbn: bool = False):
+    def __init__(self, device: Optional[str] = None, dbn: bool = False,
+                 postprocess: str = "legacy", checkpoint_path: str = "final0"):
+        if postprocess not in {"legacy", "model"}:
+            raise ValueError("지원하지 않는 비트 후처리 모드입니다.")
         self._device = device
         self.dbn = dbn
+        self.postprocess = postprocess
+        self.checkpoint_path = checkpoint_path
+        self.name = "beat_this_model" if postprocess == "model" else "beat_this"
         self._model = None
 
     @property
@@ -88,7 +98,7 @@ class BeatThisTracker:
         if self._model is None:
             from beat_this.inference import File2Beats
 
-            self._model = File2Beats(device=self.device, dbn=self.dbn)
+            self._model = File2Beats(checkpoint_path=self.checkpoint_path, device=self.device, dbn=self.dbn)
         return self._model
 
     def track(self, audio_path: str) -> BeatGrid:
@@ -97,6 +107,20 @@ class BeatThisTracker:
         downbeats = np.asarray(downbeats, dtype=float)
         if beats.size < 2:
             raise RuntimeError("beat_this가 비트를 찾지 못했다")
+
+        if self.postprocess == "model":
+            # 전체 곡의 중앙 간격으로 빠른 구간을 삭제하거나 느린 구간에 비트를
+            # 채우지 않는다. 변박·누락으로 마디 길이가 다르면 전역 박자표는 미정이다.
+            period = float(np.median(np.diff(beats)))
+            if period <= 0:
+                raise ValueError("모델의 비트 간격이 올바르지 않습니다.")
+            grid = BeatGrid(beats, 60.0 / period, downbeats if downbeats.size else None,
+                            source=self.name)
+            if downbeats.size >= 3:
+                gaps = np.diff(grid.downbeat_indices())
+                if gaps.size and np.all(gaps == gaps[0]) and 2 <= gaps[0] <= 12:
+                    grid.beats_per_bar = int(gaps[0])
+            return grid
 
         # 가짜 비트 하나가 이후 박 번호를 통째로 밀어버리므로 먼저 정리한다
         beats = sanitize_beats(beats)
@@ -211,6 +235,26 @@ def regularize_downbeats(
 
 
 def default_tracker() -> Optional[BeatTracker]:
-    """쓸 수 있으면 더 나은 추적기를 준다. 없으면 None(=librosa 사용)."""
+    """설치된 선택 추적기를 준다. 우열을 의미하지 않으며 미설치 시 librosa를 쓴다."""
     tracker = BeatThisTracker()
     return tracker if tracker.available else None
+
+
+class LibrosaPLPTracker:
+    """기본 매개변수의 국소 펄스 후보. 다운비트·박자표는 추정하지 않는다."""
+
+    name = "librosa_plp"
+    available = True
+    device = "cpu"
+
+    def track(self, audio_path: str) -> BeatGrid:
+        import librosa
+        from .audio import HOP, SR, load_audio
+
+        signal, sr = load_audio(audio_path, sr=SR)
+        onset = librosa.onset.onset_strength(y=signal, sr=sr, hop_length=HOP)
+        pulse = librosa.beat.plp(onset_envelope=onset, sr=sr, hop_length=HOP)
+        beats = librosa.frames_to_time(np.flatnonzero(librosa.util.localmax(pulse)), sr=sr, hop_length=HOP)
+        if len(beats) < 2:
+            raise RuntimeError("PLP가 충분한 비트를 찾지 못했습니다.")
+        return BeatGrid(beats, float(60.0 / np.median(np.diff(beats))), source=self.name)

@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     hits        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cache_namespace ON analysis_cache(namespace);
+CREATE TABLE IF NOT EXISTS saved_analyses (
+    id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    audio_name TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    label TEXT
+);
+CREATE TABLE IF NOT EXISTS deleted_saved_analyses (
+    source_key TEXT NOT NULL,
+    audio_name TEXT NOT NULL,
+    PRIMARY KEY (source_key, audio_name)
+);
 """
 
 
@@ -48,6 +60,17 @@ class AnalysisCache:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as con:
             con.executescript(_SCHEMA)
+            columns = {row['name'] for row in con.execute('PRAGMA table_info(saved_analyses)')}
+            if 'label' not in columns:
+                con.execute('ALTER TABLE saved_analyses ADD COLUMN label TEXT')
+            self._expire_metadata(con)
+
+    @staticmethod
+    def _expire_metadata(con: sqlite3.Connection) -> None:
+        con.execute("DELETE FROM analysis_cache WHERE namespace = 'video_search' AND created_at < ?",
+                    (time.time() - 60 * 60,))
+        con.execute("DELETE FROM analysis_cache WHERE namespace = 'video_metadata' AND created_at < ?",
+                    (time.time() - 24 * 60 * 60,))
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path)
@@ -60,10 +83,53 @@ class AnalysisCache:
         digest = hashlib.sha256(f"{identifier}|{opts}".encode("utf-8")).hexdigest()[:32]
         return f"{namespace}:{digest}"
 
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
+    def save_analysis(self, identifier: str, payload: Dict[str, Any], audio_name: str, created_at: Optional[float] = None, label: Optional[str] = None) -> None:
         with self._connect() as con:
-            row = con.execute("SELECT payload FROM analysis_cache WHERE key = ?", (key,)).fetchone()
+            con.execute("INSERT OR IGNORE INTO saved_analyses (id, payload, audio_name, created_at, label) VALUES (?, ?, ?, ?, ?)",
+                        (identifier, json.dumps(payload, ensure_ascii=False), audio_name, created_at or time.time(), label))
+
+    def saved_analyses(self):
+        with self._connect() as con:
+            return [dict(row) for row in con.execute("SELECT * FROM saved_analyses ORDER BY created_at DESC")]
+
+    def saved_analysis(self, identifier: str):
+        with self._connect() as con:
+            row = con.execute("SELECT * FROM saved_analyses WHERE id = ?", (identifier,)).fetchone()
+            return dict(row) if row else None
+
+    def rename_saved_analysis(self, identifier: str, label: str) -> bool:
+        with self._connect() as con:
+            result = con.execute('UPDATE saved_analyses SET label = ? WHERE id = ?', (label, identifier))
+            return result.rowcount > 0
+
+    def deleted_saved_keys(self):
+        with self._connect() as con:
+            return {(row['source_key'], row['audio_name']) for row in
+                    con.execute('SELECT source_key, audio_name FROM deleted_saved_analyses')}
+
+    def delete_saved_analysis(self, identifier: str) -> bool:
+        with self._connect() as con:
+            row = con.execute('SELECT payload, audio_name FROM saved_analyses WHERE id = ?', (identifier,)).fetchone()
             if row is None:
+                return False
+            source_key = json.loads(row['payload']).get('source_key', '')
+            con.execute('INSERT OR IGNORE INTO deleted_saved_analyses (source_key, audio_name) VALUES (?, ?)',
+                        (source_key, row['audio_name']))
+            con.execute('DELETE FROM saved_analyses WHERE id = ?', (identifier,))
+            return True
+
+    def legacy_audio_entries(self):
+        with self._connect() as con:
+            return [dict(row) for row in con.execute("SELECT key, payload, created_at FROM analysis_cache WHERE namespace = 'audio'")]
+
+    def get(self, key: str, max_age: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        with self._connect() as con:
+            self._expire_metadata(con)
+            row = con.execute("SELECT payload, created_at FROM analysis_cache WHERE key = ?", (key,)).fetchone()
+            if row is None:
+                return None
+            if max_age is not None and time.time() - row["created_at"] > max_age:
+                con.execute("DELETE FROM analysis_cache WHERE key = ?", (key,))
                 return None
             con.execute("UPDATE analysis_cache SET hits = hits + 1 WHERE key = ?", (key,))
         return json.loads(row["payload"])

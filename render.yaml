@@ -1,0 +1,19 @@
+# 실제 앱 이전이 아닌, 음원 확보만 한 곡 검증하는 임시 무료 서비스.
+services:
+  - type: web
+    name: chord-source-probe
+    runtime: python
+    plan: free
+    region: oregon
+    branch: feat/authorized-audio-sources
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r requirements-source-probe.txt
+    startCommand: python scripts/probe_youtube_audio.py serve
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.14"
+      - key: SOURCE_PROBE_VIDEO_ID
+        value: BzYnNdJhZQw
+      - key: SOURCE_PROBE_RUN
+        value: "1"

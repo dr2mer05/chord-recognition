@@ -1,0 +1,26 @@
+{
+  "name": "Chord Analysis Lab · CPU",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "4416": { "label": "내부 토큰 공급기", "onAutoForward": "ignore" },
+    "8000": {
+      "label": "Chord Analysis Lab · 개인 검증",
+      "onAutoForward": "openBrowser",
+      "requireLocalPort": true
+    }
+  },
+  "postCreateCommand": "bash scripts/setup-dev.sh",
+  "postStartCommand": "bash scripts/start-dev.sh",
+  "customizations": {
+    "vscode": {
+      "settings": { "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python" },
+      "extensions": ["ms-python.python"]
+    },
+    "codespaces": { "openFiles": ["README.md"] }
+  }
+}

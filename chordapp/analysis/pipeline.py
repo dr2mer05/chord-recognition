@@ -1,4 +1,4 @@
-﻿"""오디오 → 코드 진행. 파이프라인 1-2의 [C] 분기."""
+"""오디오 → 코드 진행. 파이프라인 1-2의 [C] 분기."""
 
 from __future__ import annotations
 
@@ -37,17 +37,18 @@ def analyze_audio(
     path: str,
     vocabulary: str = "standard",
     recognizers: Optional[Sequence[Recognizer]] = None,
-    beats_per_bar: int = 4,
+    beats_per_bar: Optional[int] = None,
     max_seconds: Optional[float] = None,
     key_override: Optional[Key] = None,
     detect_inversions: bool = True,
-    snap_bars: bool = True,
+    snap_bars: bool = False,
     separate: Optional[bool] = None,
     separator: Optional["DemucsSeparator"] = None,
     tempo_override: Optional[float] = None,
     downbeat_offset: int = 0,
     beat_offset: Optional[float] = None,
     tracker: object = _USE_DEFAULT_TRACKER,
+    smooth_chords: bool = False,
 ) -> AnalysisResult:
     warnings: List[str] = []
 
@@ -70,15 +71,21 @@ def analyze_audio(
         beat_offset=beat_offset,
         tracker=tracker,
     )
+    # 특징 추출에서 자동/수동 우선순위를 확정한다. 기본 4박으로 다시 덮지 않는다.
+    resolved_beats_per_bar = feats.beats_per_bar
     if feats.beat_source != "librosa":
-        warnings.append(f"비트·다운비트를 {feats.beat_source}로 추적 (librosa보다 정확)")
+        warnings.append(f"비트를 {feats.beat_source}로 추적")
+    if feats.beat_tracker_fallback:
+        warnings.append(f"{feats.beat_tracker_requested} 실행 실패로 librosa 사용 ({feats.beat_tracker_fallback})")
+    if feats.meter_source == "default":
+        warnings.append("박자표를 자동 판정하지 못해 기본 4박/마디로 표시합니다. 필요하면 박자를 직접 지정해 주세요.")
     # 사용자가 탭으로 격자를 확정했거나 마디 시작을 직접 민 경우에는
     # 아래의 자동 위상 보정을 돌리지 않는다.
     manual_downbeats = bool(tempo_override and beat_offset is not None) or bool(downbeat_offset)
 
     if tempo_override:
         warnings.append(f"템포를 {tempo_override:.0f} BPM으로 지정해 격자를 다시 맞춤")
-    if beats_per_bar != 4:
+    if beats_per_bar is not None:
         warnings.append(f"박자를 {beats_per_bar}박/마디로 지정")
     if downbeat_offset:
         warnings.append(f"마디 시작을 {downbeat_offset}박 밀어서 맞춤")
@@ -142,7 +149,10 @@ def analyze_audio(
             chords, confidence, agreement = vote([p for _, p in pairs], key)
 
     predictions = [p for _, p in pairs]
-    chords = smooth_short_runs(chords, min_beats=2)
+    # 각 인식기가 이미 시간 방향 추론을 한다. 구간 길이만으로 정상적인
+    # 한 박 코드를 삭제하는 추가 보정은 기본값에서 제외한다.
+    if smooth_chords:
+        chords = smooth_short_runs(chords, min_beats=2)
 
     # 코드 변화로 마디 첫 박을 다시 정하는 보정을 넣었다가 뺐다.
     #
@@ -156,7 +166,7 @@ def analyze_audio(
 
     segments = segment_beats(
         chords, confidence, agreement, feats.beat_times, feats.duration,
-        feats.downbeat_indices, beats_per_bar,
+        feats.downbeat_indices, resolved_beats_per_bar,
     )
     if snap_bars:
         segments = snap_to_bars(segments, feats.beat_times, feats.downbeat_indices)
@@ -184,8 +194,13 @@ def analyze_audio(
         segments=segments,
         beat_times=[float(t) for t in feats.beat_times],
         downbeats=[float(t) for t in downbeat_times],
-        beats_per_bar=beats_per_bar,
+        beats_per_bar=resolved_beats_per_bar,
         recognizers=[p.name for p in predictions],
         origin="audio",
+        execution={"beat_tracker": feats.beat_source, "separated": feats.separated,
+                   "beat_tracker_requested": feats.beat_tracker_requested,
+                   "beat_tracker_fallback": feats.beat_tracker_fallback,
+                   "meter_source": feats.meter_source,
+                   "recognizers": [p.name for p in predictions]},
         warnings=warnings,
     )

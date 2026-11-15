@@ -1,37 +1,15 @@
-# Python 3.10 이상. beat_this가 3.10+ 문법을 쓴다 (3.9에서는 librosa로 폴백).
-#
-#   py -3.10 -m venv .venv
-#   .venv\Scripts\pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-#   .venv\Scripts\pip install -r requirements.txt
-
-# --- 코어 (화성학 엔진만 쓸 거면 이것도 필요 없다: theory/는 표준 라이브러리만 사용) ---
-numpy>=1.22,<2.0
-
-# --- 오디오 분석 ---
-librosa>=0.10,<0.11
-scipy>=1.7
-soundfile>=0.12
-
-# --- 서버 ---
+# 기본 CPU 실행 환경. Python 3.12 권장.
+# 전체 재현 설치: pip install -r requirements-cpu.lock
+numpy==1.26.4
+librosa==0.10.2.post1
+scipy==1.13.1
+numba==0.61.2
+llvmlite==0.44.0
+soundfile==0.14.0
 fastapi>=0.110
-uvicorn[standard]>=0.27
+uvicorn>=0.27
 python-multipart>=0.0.9
 pydantic>=2.0
-
-# --- 개발 ---
 pytest>=7.0
-
-# --- 비트/다운비트 추적 (권장) ---
-# librosa 기본 추적기는 템포 배수를 고정 사전확률로 정해서 느린 곡을 2배로 잡고,
-# 다운비트와 박자표를 아예 주지 않는다. beat_this는 셋을 한 번에 해결한다.
-# 실측 5곡 템포 정확도 librosa 3/5 → beat_this 5/5.
-beat_this>=1.1            # Python 3.10+ 필요. 없으면 librosa로 자동 폴백
-
-# --- 유튜브 / 소스 분리 ---
-yt-dlp                    # CHORDAPP_ENABLE_YTDLP=1 일 때만 동작
-imageio-ffmpeg            # ffmpeg 번들 (시스템 설치본이 있으면 그쪽 우선)
-demucs                    # CHORDAPP_ENABLE_DEMUCS=1 일 때만 동작. GPU 권장
-
-# --- 선택: 설치하면 앙상블에 자동 합류 ---
-# autochord           # 사전학습 딥러닝. Windows에서는 vamp 때문에 MSVC 필요
-# chord-extractor     # Chordino(DSP). 동일하게 vamp 필요
+httpx>=0.28
+# beat_this / Demucs는 기본 설치에서 제외. requirements-models.txt 참고.

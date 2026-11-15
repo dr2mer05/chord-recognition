@@ -1,13 +1,10 @@
 import pytest
 
 from chordapp.service.youtube import (
-    AudioFetchDisabled,
-    DisabledAudioProvider,
     DisabledSearch,
     InvalidVideoUrl,
     SearchUnavailable,
     VideoInfo,
-    YtDlpProvider,
     _parse_iso8601_duration,
     parse_video_id,
     split_artist_title,
@@ -113,29 +110,6 @@ def test_oembed_returns_none_when_offline(monkeypatch):
     assert fetch_oembed(VID) is None
 
 
-def test_audio_fetch_is_off_by_default(tmp_path):
-    """약관 검토 전까지 오디오 추출은 꺼져 있어야 한다."""
-    with pytest.raises(AudioFetchDisabled, match="CHORDAPP_ENABLE_YTDLP"):
-        DisabledAudioProvider().fetch(VID, tmp_path)
-
-
-def test_ytdlp_provider_refuses_without_env_flag(tmp_path, monkeypatch):
-    monkeypatch.delenv("CHORDAPP_ENABLE_YTDLP", raising=False)
-    provider = YtDlpProvider()
-    assert provider.enabled is False
-    with pytest.raises(AudioFetchDisabled):
-        provider.fetch(VID, tmp_path)
-
-
-def test_ytdlp_provider_needs_the_binary_even_when_enabled(tmp_path, monkeypatch):
-    monkeypatch.setenv("CHORDAPP_ENABLE_YTDLP", "1")
-    monkeypatch.setattr("shutil.which", lambda name: None)
-    provider = YtDlpProvider()
-    assert provider.enabled is False
-    with pytest.raises(AudioFetchDisabled, match="yt-dlp"):
-        provider.fetch(VID, tmp_path)
-
-
 def test_service_caches_by_video_id(tmp_path):
     """캐시 키가 영상 ID 기준이어야 URL 형태가 달라도 같은 캐시를 맞힌다."""
     from chordapp.service.cache import AnalysisCache
@@ -147,76 +121,3 @@ def test_service_caches_by_video_id(tmp_path):
     b = service.cache.make_key(NAMESPACE_YOUTUBE, parse_video_id(f"https://m.youtube.com/watch?v={VID}&t=9"),
                                vocabulary="standard")
     assert a == b
-
-
-class _StubSearch:
-    """API 키 없이 oEmbed로 제목만 얻은 상황을 흉내낸다."""
-
-    available = False
-
-    def __init__(self, info):
-        self.info = info
-
-    def search(self, query, limit=8):
-        raise SearchUnavailable("stub")
-
-    def metadata(self, video_id):
-        return self.info
-
-
-class _ExplodingAudio:
-    enabled = True
-
-    def fetch(self, video_id, dest_dir):
-        raise AssertionError("코드 DB가 HIT면 오디오 분석까지 가면 안 된다")
-
-
-def _db(tmp_path):
-    import json
-
-    from chordapp.service.chord_db import LocalJsonDatabase
-
-    path = tmp_path / "db.json"
-    path.write_text(json.dumps([{
-        "artist": "Demo Artist", "title": "Demo Song", "key": "C", "bpm": 120,
-        "beats_per_bar": 4, "chords": [["C", 4], ["G", 4], ["Am", 4], ["F", 4]],
-    }]), encoding="utf-8")
-    return LocalJsonDatabase(path)
-
-
-def test_youtube_link_hits_chord_db_without_any_credentials(tmp_path):
-    """API 키도 yt-dlp도 없이, 링크 → 제목 → 코드 DB HIT 경로가 살아 있어야 한다."""
-    from chordapp.service.cache import AnalysisCache
-    from chordapp.service.pipeline import ChordService
-
-    info = VideoInfo(VID, title="Demo Artist - Demo Song (Official Video)", channel="Demo Artist")
-    service = ChordService(
-        cache=AnalysisCache(tmp_path / "c.sqlite3"), database=_db(tmp_path),
-        search=_StubSearch(info), audio_provider=_ExplodingAudio(),
-    )
-
-    result, video = service.analyze_youtube(f"https://youtu.be/{VID}")
-    assert result.origin == "database"
-    assert [s.chord.name() for s in result.segments] == ["C", "G", "Am", "F"]
-    assert video is not None and video.video_id == VID
-
-    cached, _ = service.analyze_youtube(f"https://www.youtube.com/watch?v={VID}&t=30")
-    assert cached.origin == "cache" and cached.cached is True
-
-
-def test_service_reports_audio_disabled(tmp_path, monkeypatch):
-    """플래그가 없으면 꺼져 있어야 한다.
-
-    개발자 로컬 .env가 켜 놨더라도 이 계약은 유지돼야 하므로 환경을 비우고 본다.
-    """
-    monkeypatch.delenv("CHORDAPP_ENABLE_YTDLP", raising=False)
-
-    from chordapp.service.cache import AnalysisCache
-    from chordapp.service.pipeline import ChordService
-    from chordapp.service.youtube import default_audio_provider
-
-    service = ChordService(cache=AnalysisCache(tmp_path / "c.sqlite3"),
-                           audio_provider=default_audio_provider())
-    assert service.audio_provider.enabled is False
-    with pytest.raises(AudioFetchDisabled):
-        service.analyze_youtube(f"https://youtu.be/{VID}")

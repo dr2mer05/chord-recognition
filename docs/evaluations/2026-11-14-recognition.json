@@ -1,0 +1,2021 @@
+{
+  "date": "2026-11-14",
+  "dataset_kind": "synthetic",
+  "baseline_commit": "b9cb3eea22491e0570a9dd1c4f2491f46d438fb3",
+  "limitations": [
+    "Same synthesizer for both chord suites; not a held-out real-music benchmark.",
+    "Chord metrics sample every 20ms; seventh compares the entire internal quality, not standard MIREX reduction.",
+    "6/8 beat fixtures represent six generator pulses; no genuine compound-meter validation.",
+    "beat_this real inference was not run; official checkpoint download returned HTTP 500.",
+    "Model-preservation unit tests use controlled model output, not model accuracy."
+  ],
+  "beats": {
+    "environment": {
+      "python": "3.12.14",
+      "packages": {
+        "numpy": "1.26.4",
+        "librosa": "0.10.2.post1",
+        "scipy": "1.13.1",
+        "beat-this": null,
+        "torch": null
+      },
+      "analysis_version": 6,
+      "generator_sha256": "e66aa12f36a90ab1678931125ab4fcbb7570440df13149d722912ffb4e5ff38f",
+      "audio_frontend_sha256": "64d0128bfb80eaa7f21258bf59ccc9880dbaf1ba2c9c0b20d4a0a73853db5f7c",
+      "beat_tracker_sha256": "5152e9348de98d03ebef37ccc44efb0ce7934df9b72dc4dded4e292d97bb245f",
+      "metrics_sha256": "570073e449c619619cd55272e8995d82721ee7bfe22a775e0aa0f35d14b9c826",
+      "evaluation_protocol_sha256": "3b0a2edd68bb02595cecfca19ae70bbe15cf1c9ebc9f4425008062825471b38e"
+    },
+    "settings": {
+      "meter_mode": "auto",
+      "reference_meter_supplied": false,
+      "tracker_request": "librosa",
+      "tolerance_seconds": 0.07,
+      "checkpoint": null,
+      "event_scoring": "all_estimates_against_generator_beats; audio_has_1s_release_tail",
+      "bar_scoring": "consecutive_start_and_end_boundaries_within_annotated_music"
+    },
+    "librosa_before": {
+      "tracks": 16,
+      "beat_f_macro": 0.9817075265916582,
+      "downbeat_f_macro": 0.7291252136727965,
+      "bar_f_macro": 0.6875,
+      "tempo_multiple_errors": 0,
+      "beats_per_bar_accuracy": 0.8125
+    },
+    "librosa_after": {
+      "tracks": 16,
+      "beat_f_macro": 0.9817075265916582,
+      "downbeat_f_macro": 0.7291252136727965,
+      "bar_f_macro": 0.6875,
+      "tempo_multiple_errors": 0,
+      "beats_per_bar_accuracy": 0.8125
+    },
+    "plp": {
+      "tracks": 16,
+      "beat_f_macro": 0.7150133208700388,
+      "downbeat_f_macro": 0.5831615122225878,
+      "bar_f_macro": 0.22197387518142236,
+      "tempo_multiple_errors": 5,
+      "beats_per_bar_accuracy": 0.8125
+    },
+    "tracks": [
+      {
+        "name": "bpm062_4_4",
+        "audio_sha256": "324deb1b048dba5a737135373c8a24140e2a1faf4f0568d9beabe93ce546cecc",
+        "reference": {
+          "bpm": 62,
+          "beats_per_bar": 4,
+          "duration_seconds": 61.935483870967744,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9923135080645161,
+            "percent": 0.7686491935483875,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9846153846153847,
+            "precision": 0.9696969696969697,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 66
+          },
+          "downbeats": {
+            "f": 0.9696969696969697,
+            "precision": 0.9411764705882353,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 17
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 16
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 4.167716733870946,
+            "percent": 316.77167338709455,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.3938461538461538,
+            "precision": 0.24521072796934865,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 261
+          },
+          "downbeats": {
+            "f": 0.3902439024390244,
+            "precision": 0.24242424242424243,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 66
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 64
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm070_4_4",
+        "audio_sha256": "1d7766c6f5a54044d92e9b90a47df115c43e338092b7d2e5ad4fc9ee13ca79e7",
+        "reference": {
+          "bpm": 70,
+          "beats_per_bar": 4,
+          "duration_seconds": 54.857142857142854,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9976773648648649,
+            "percent": 0.2322635135135087,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9846153846153847,
+            "precision": 0.9696969696969697,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 66
+          },
+          "downbeats": {
+            "f": 0.9696969696969697,
+            "precision": 0.9411764705882353,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 17
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 16
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 2.05078125000001,
+            "percent": 105.07812500000102,
+            "octave": true
+          },
+          "beats": {
+            "f": 0.5981308411214953,
+            "precision": 0.4266666666666667,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 150
+          },
+          "downbeats": {
+            "f": 0.3018867924528302,
+            "precision": 0.21621621621621623,
+            "recall": 0.5,
+            "n_ref": 16,
+            "n_est": 37
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 36
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm078_4_4",
+        "audio_sha256": "178f0337da66ad805e99b49960bf11742842cac278f29fd8d9b5e0a2cc61d4eb",
+        "reference": {
+          "bpm": 78,
+          "beats_per_bar": 4,
+          "duration_seconds": 49.23076923076923,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 1.0038789335664335,
+            "percent": 0.387893356643354,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9846153846153847,
+            "precision": 0.9696969696969697,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 66
+          },
+          "downbeats": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 16
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 15
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 1.9487061651583748,
+            "percent": 94.87061651583748,
+            "octave": true
+          },
+          "beats": {
+            "f": 0.6564102564102564,
+            "precision": 0.48854961832061067,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 131
+          },
+          "downbeats": {
+            "f": 0.653061224489796,
+            "precision": 0.48484848484848486,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 33
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 32
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm092_4_4",
+        "audio_sha256": "a98cbdd8c65bd1f306592d6f0ca8230596c495753b93a79b177428add3d2bbaf",
+        "reference": {
+          "bpm": 92,
+          "beats_per_bar": 4,
+          "duration_seconds": 41.73913043478261,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 1.0030995244565217,
+            "percent": 0.30995244565217295,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9846153846153847,
+            "precision": 0.9696969696969697,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 66
+          },
+          "downbeats": {
+            "f": 0.9696969696969697,
+            "precision": 0.9411764705882353,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 17
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 16
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 3.120754076086919,
+            "percent": 212.07540760869188,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.49042145593869724,
+            "precision": 0.3248730964467005,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 197
+          },
+          "downbeats": {
+            "f": 0.48484848484848486,
+            "precision": 0.32,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 50
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 48
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm104_4_4",
+        "audio_sha256": "61b2397bc508a523aa0a3a070a87edfb0b7d3c765e15a8ad43d60781d0eb3863",
+        "reference": {
+          "bpm": 104,
+          "beats_per_bar": 4,
+          "duration_seconds": 36.92307692307692,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9938401442307693,
+            "percent": 0.6159855769230727,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9770992366412213,
+            "precision": 0.9552238805970149,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 67
+          },
+          "downbeats": {
+            "f": 0.9696969696969697,
+            "precision": 0.9411764705882353,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 17
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 16
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 2.070500300480753,
+            "percent": 107.05003004807531,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.653061224489796,
+            "precision": 0.48484848484848486,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 132
+          },
+          "downbeats": {
+            "f": 0.653061224489796,
+            "precision": 0.48484848484848486,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 33
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 32
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm118_4_4",
+        "audio_sha256": "49eee4407b5f1e21ff7903a66398bf5dcac9cc3524e0bf041b85f40e861b4375",
+        "reference": {
+          "bpm": 118,
+          "beats_per_bar": 4,
+          "duration_seconds": 32.54237288135593,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9953714849768875,
+            "percent": 0.4628515023112456,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9770992366412213,
+            "precision": 0.9552238805970149,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 67
+          },
+          "downbeats": {
+            "f": 0.9696969696969697,
+            "precision": 0.9411764705882353,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 17
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 16
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 1.990742969953776,
+            "percent": 99.0742969953776,
+            "octave": true
+          },
+          "beats": {
+            "f": 0.649746192893401,
+            "precision": 0.48120300751879697,
+            "recall": 1.0,
+            "n_ref": 64,
+            "n_est": 133
+          },
+          "downbeats": {
+            "f": 0.6399999999999999,
+            "precision": 0.47058823529411764,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 34
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 32
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm132_4_4",
+        "audio_sha256": "f9c079e3ed48d89ad333533bb2d667b10460ddf8014e61a318d1e12a6322ad16",
+        "reference": {
+          "bpm": 132,
+          "beats_per_bar": 4,
+          "duration_seconds": 36.36363636363637,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9787819602272727,
+            "percent": 2.1218039772727293,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9815950920245399,
+            "precision": 0.963855421686747,
+            "recall": 1.0,
+            "n_ref": 80,
+            "n_est": 83
+          },
+          "downbeats": {
+            "f": 0.975609756097561,
+            "precision": 0.9523809523809523,
+            "recall": 1.0,
+            "n_ref": 20,
+            "n_est": 21
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 20,
+            "n_est": 20
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 1.9575639204545352,
+            "percent": 95.75639204545352,
+            "octave": true
+          },
+          "beats": {
+            "f": 0.7339449541284404,
+            "precision": 0.5797101449275363,
+            "recall": 1.0,
+            "n_ref": 80,
+            "n_est": 138
+          },
+          "downbeats": {
+            "f": 0.43636363636363634,
+            "precision": 0.34285714285714286,
+            "recall": 0.6,
+            "n_ref": 20,
+            "n_est": 35
+          },
+          "bars": {
+            "f": 0.03773584905660378,
+            "precision": 0.030303030303030304,
+            "recall": 0.05,
+            "n_ref": 20,
+            "n_est": 33
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm146_4_4",
+        "audio_sha256": "8719df8f8b94901a4fc896507fc72b4005f057075e797fcf8861fcdb78dcc536",
+        "reference": {
+          "bpm": 146,
+          "beats_per_bar": 4,
+          "duration_seconds": 32.87671232876713,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9832512842465754,
+            "percent": 1.6748715753424626,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9815950920245399,
+            "precision": 0.963855421686747,
+            "recall": 1.0,
+            "n_ref": 80,
+            "n_est": 83
+          },
+          "downbeats": {
+            "f": 0.975609756097561,
+            "precision": 0.9523809523809523,
+            "recall": 1.0,
+            "n_ref": 20,
+            "n_est": 21
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 20,
+            "n_est": 20
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 0.9832512842465762,
+            "percent": 1.6748715753423848,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9815950920245399,
+            "precision": 0.963855421686747,
+            "recall": 1.0,
+            "n_ref": 80,
+            "n_est": 83
+          },
+          "downbeats": {
+            "f": 0.975609756097561,
+            "precision": 0.9523809523809523,
+            "recall": 1.0,
+            "n_ref": 20,
+            "n_est": 21
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 20,
+            "n_est": 20
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm160_4_4",
+        "audio_sha256": "c6256b9e00f14cc9ed761af788735d359dee675f7a7a5da6154752f9e81af548",
+        "reference": {
+          "bpm": 160,
+          "beats_per_bar": 4,
+          "duration_seconds": 36.0,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 1.009368896484375,
+            "percent": 0.9368896484375,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9795918367346939,
+            "precision": 0.96,
+            "recall": 1.0,
+            "n_ref": 96,
+            "n_est": 100
+          },
+          "downbeats": {
+            "f": 0.9795918367346939,
+            "precision": 0.96,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 25
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 24
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 1.0093688964843737,
+            "percent": 0.9368896484373668,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9846153846153847,
+            "precision": 0.9696969696969697,
+            "recall": 1.0,
+            "n_ref": 96,
+            "n_est": 99
+          },
+          "downbeats": {
+            "f": 0.9795918367346939,
+            "precision": 0.96,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 25
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 24
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "bpm096_3_4",
+        "audio_sha256": "f7e6a694b4a5383e62cb35f53bc55e7a25e6b436e23980f2f18d15b0fc934ac0",
+        "reference": {
+          "bpm": 96,
+          "beats_per_bar": 3,
+          "duration_seconds": 33.75,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9969075520833334,
+            "percent": 0.30924479166666297,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9818181818181818,
+            "precision": 0.9642857142857143,
+            "recall": 1.0,
+            "n_ref": 54,
+            "n_est": 56
+          },
+          "downbeats": {
+            "f": 0.25,
+            "precision": 0.2857142857142857,
+            "recall": 0.2222222222222222,
+            "n_ref": 18,
+            "n_est": 14
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 18,
+            "n_est": 13
+          },
+          "beats_per_bar_match": false
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 0.9969075520833327,
+            "percent": 0.3092447916667296,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9724770642201834,
+            "precision": 0.9636363636363636,
+            "recall": 0.9814814814814815,
+            "n_ref": 54,
+            "n_est": 55
+          },
+          "downbeats": {
+            "f": 0.2580645161290323,
+            "precision": 0.3076923076923077,
+            "recall": 0.2222222222222222,
+            "n_ref": 18,
+            "n_est": 13
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 18,
+            "n_est": 12
+          },
+          "beats_per_bar_match": false
+        }
+      },
+      {
+        "name": "bpm138_3_4",
+        "audio_sha256": "c874cd2bf5ff7e7e2e3d815ca658883666cbed2f7d0487cce8552a53d3e15219",
+        "reference": {
+          "bpm": 138,
+          "beats_per_bar": 3,
+          "duration_seconds": 23.47826086956522,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9855012871853548,
+            "percent": 1.449871281464521,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.972972972972973,
+            "precision": 0.9473684210526315,
+            "recall": 1.0,
+            "n_ref": 54,
+            "n_est": 57
+          },
+          "downbeats": {
+            "f": 0.31250000000000006,
+            "precision": 0.35714285714285715,
+            "recall": 0.2777777777777778,
+            "n_ref": 18,
+            "n_est": 14
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 18,
+            "n_est": 12
+          },
+          "beats_per_bar_match": false
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 2.080502717391297,
+            "percent": 108.05027173912971,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.6467065868263473,
+            "precision": 0.4778761061946903,
+            "recall": 1.0,
+            "n_ref": 54,
+            "n_est": 113
+          },
+          "downbeats": {
+            "f": 0.391304347826087,
+            "precision": 0.32142857142857145,
+            "recall": 0.5,
+            "n_ref": 18,
+            "n_est": 28
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 18,
+            "n_est": 26
+          },
+          "beats_per_bar_match": false
+        }
+      },
+      {
+        "name": "bpm084_6_8",
+        "audio_sha256": "42de1468da47e82d08386b08e22a37359b8416becf033f57f95ea2b3a21159bf",
+        "reference": {
+          "bpm": 84,
+          "beats_per_bar": 6,
+          "duration_seconds": 68.57142857142857,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9923135080645162,
+            "percent": 0.7686491935483764,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9896907216494846,
+            "precision": 0.9795918367346939,
+            "recall": 1.0,
+            "n_ref": 96,
+            "n_est": 98
+          },
+          "downbeats": {
+            "f": 0.4,
+            "precision": 0.3333333333333333,
+            "recall": 0.5,
+            "n_ref": 16,
+            "n_est": 24
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 23
+          },
+          "beats_per_bar_match": false
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 2.0507812499999893,
+            "percent": 105.07812499999893,
+            "octave": true
+          },
+          "beats": {
+            "f": 0.6597938144329897,
+            "precision": 0.49230769230769234,
+            "recall": 1.0,
+            "n_ref": 96,
+            "n_est": 195
+          },
+          "downbeats": {
+            "f": 0.4923076923076923,
+            "precision": 0.32653061224489793,
+            "recall": 1.0,
+            "n_ref": 16,
+            "n_est": 49
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 16,
+            "n_est": 48
+          },
+          "beats_per_bar_match": false
+        }
+      },
+      {
+        "name": "fast_harmony_88",
+        "audio_sha256": "268cee7793269d3773c3a27ee2a226fc11b38db9638a50357452fcaeb31af833",
+        "reference": {
+          "bpm": 88,
+          "beats_per_bar": 4,
+          "duration_seconds": 32.72727272727273,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 1.0125330623040751,
+            "percent": 1.2533062304075138,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9795918367346939,
+            "precision": 0.96,
+            "recall": 1.0,
+            "n_ref": 48,
+            "n_est": 50
+          },
+          "downbeats": {
+            "f": 0.9600000000000001,
+            "precision": 0.9230769230769231,
+            "recall": 1.0,
+            "n_ref": 12,
+            "n_est": 13
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 12,
+            "n_est": 12
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 1.0125330623040747,
+            "percent": 1.2533062304074694,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9142857142857143,
+            "precision": 0.8421052631578947,
+            "recall": 1.0,
+            "n_ref": 48,
+            "n_est": 57
+          },
+          "downbeats": {
+            "f": 0.5925925925925926,
+            "precision": 0.5333333333333333,
+            "recall": 0.6666666666666666,
+            "n_ref": 12,
+            "n_est": 15
+          },
+          "bars": {
+            "f": 0.5599999999999999,
+            "precision": 0.5384615384615384,
+            "recall": 0.5833333333333334,
+            "n_ref": 12,
+            "n_est": 13
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "fast_harmony_124",
+        "audio_sha256": "2741ab5015eba3923e9236aa51448cff4468c848d2fa2c5a222edcd16771bade",
+        "reference": {
+          "bpm": 124,
+          "beats_per_bar": 4,
+          "duration_seconds": 23.225806451612904,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9923135080645161,
+            "percent": 0.7686491935483875,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9696969696969697,
+            "precision": 0.9411764705882353,
+            "recall": 1.0,
+            "n_ref": 48,
+            "n_est": 51
+          },
+          "downbeats": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 12,
+            "n_est": 13
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 12,
+            "n_est": 11
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 2.083858366935473,
+            "percent": 108.38583669354729,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.6442953020134228,
+            "precision": 0.4752475247524752,
+            "recall": 1.0,
+            "n_ref": 48,
+            "n_est": 101
+          },
+          "downbeats": {
+            "f": 0.631578947368421,
+            "precision": 0.46153846153846156,
+            "recall": 1.0,
+            "n_ref": 12,
+            "n_est": 26
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 12,
+            "n_est": 24
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "slow_harmony_76",
+        "audio_sha256": "ec652ecd2c5634ca456e7fae7ae9ea2dd96f515f1884eb3fab8f693a86377c3d",
+        "reference": {
+          "bpm": 76,
+          "beats_per_bar": 4,
+          "duration_seconds": 75.78947368421052,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 0.9999939531733745,
+            "percent": 0.0006046826625527579,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9896907216494846,
+            "precision": 0.9795918367346939,
+            "recall": 1.0,
+            "n_ref": 96,
+            "n_est": 98
+          },
+          "downbeats": {
+            "f": 0.9795918367346939,
+            "precision": 0.96,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 25
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 24
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 3.0908904007177047,
+            "percent": 209.08904007177048,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.49484536082474223,
+            "precision": 0.3287671232876712,
+            "recall": 1.0,
+            "n_ref": 96,
+            "n_est": 292
+          },
+          "downbeats": {
+            "f": 0.49484536082474223,
+            "precision": 0.3287671232876712,
+            "recall": 1.0,
+            "n_ref": 24,
+            "n_est": 73
+          },
+          "bars": {
+            "f": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "n_ref": 24,
+            "n_est": 72
+          },
+          "beats_per_bar_match": true
+        }
+      },
+      {
+        "name": "slow_harmony_128",
+        "audio_sha256": "84fcf74c6ab52b65fa666492d2db1fd04c9dfe810433793c3f23c32af26c4bed",
+        "reference": {
+          "bpm": 128,
+          "beats_per_bar": 4,
+          "duration_seconds": 60.0,
+          "pulse_unit": "synthetic_generator_pulse"
+        },
+        "librosa_metrics": {
+          "tempo": {
+            "ratio": 1.009368896484375,
+            "percent": 0.9368896484375,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9884169884169884,
+            "precision": 0.9770992366412213,
+            "recall": 1.0,
+            "n_ref": 128,
+            "n_est": 131
+          },
+          "downbeats": {
+            "f": 0.9846153846153847,
+            "precision": 0.9696969696969697,
+            "recall": 1.0,
+            "n_ref": 32,
+            "n_est": 33
+          },
+          "bars": {
+            "f": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "n_ref": 32,
+            "n_est": 32
+          },
+          "beats_per_bar_match": true
+        },
+        "plp_metrics": {
+          "tempo": {
+            "ratio": 1.0093688964843737,
+            "percent": 0.9368896484373668,
+            "octave": false
+          },
+          "beats": {
+            "f": 0.9660377358490566,
+            "precision": 0.9343065693430657,
+            "recall": 1.0,
+            "n_ref": 128,
+            "n_est": 137
+          },
+          "downbeats": {
+            "f": 0.955223880597015,
+            "precision": 0.9142857142857143,
+            "recall": 1.0,
+            "n_ref": 32,
+            "n_est": 35
+          },
+          "bars": {
+            "f": 0.9538461538461539,
+            "precision": 0.9393939393939394,
+            "recall": 0.96875,
+            "n_ref": 32,
+            "n_est": 33
+          },
+          "beats_per_bar_match": true
+        }
+      }
+    ]
+  },
+  "chords": {
+    "demo": {
+      "aggregate_legacy": {
+        "root": 0.9875093061010305,
+        "triad": 0.9875093061010305,
+        "seventh": 0.9875093061010305
+      },
+      "aggregate_current": {
+        "root": 0.9875093061010305,
+        "triad": 0.9875093061010305,
+        "seventh": 0.9773429658932509
+      },
+      "settings_current": {
+        "legacy_chords": false,
+        "tracker_request": "librosa",
+        "vocabulary": "standard",
+        "separate": false
+      },
+      "settings_legacy": {
+        "legacy_chords": true,
+        "tracker_request": "librosa",
+        "vocabulary": "standard",
+        "separate": false
+      },
+      "environment": {
+        "python": "3.12.14",
+        "packages": {
+          "numpy": "1.26.4",
+          "librosa": "0.10.2.post1",
+          "scipy": "1.13.1",
+          "beat-this": null,
+          "torch": null
+        },
+        "analysis_version": 6,
+        "generator_sha256": "e66aa12f36a90ab1678931125ab4fcbb7570440df13149d722912ffb4e5ff38f",
+        "audio_frontend_sha256": "98ad993b81c42551761fbc887b39dcf402b804ed56088170a835d004ee4e861c",
+        "beat_tracker_sha256": "5152e9348de98d03ebef37ccc44efb0ce7934df9b72dc4dded4e292d97bb245f",
+        "metrics_sha256": "52af8d5b59a915701b461060478199beb89924204316217041c317321c0637d7",
+        "evaluation_protocol_sha256": "3b0a2edd68bb02595cecfca19ae70bbe15cf1c9ebc9f4425008062825471b38e"
+      },
+      "pipeline_sha256": "9cbe5fc02d20eac994d9af16ba74a2e2cbee6830d76111c52ea399cadce3d693",
+      "recognizer_sha256": "44cac0ad80aa28852b12b125d04eba6c9c9c7fda59679ccf56ba28766fc293a4",
+      "tracks": [
+        {
+          "name": "ballad_sevenths",
+          "audio_sha256": "7a09758a87e9a81da11ce729a3c1cd2c5643bdc4dd18879ae89c018ecb833e38",
+          "reference_sha256": "1b70183566429107fa08e91d49bb309142bfc076b2410f26ca78bc2aa9c0d301",
+          "duration": 37.894737,
+          "legacy": {
+            "scores": {
+              "root": 0.9926121372031662,
+              "triad": 0.9926121372031662,
+              "seventh": 0.9926121372031662
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj7": {
+                "sampled_seconds": 9.48,
+                "accuracy": 0.9957805907172996
+              },
+              "min7": {
+                "sampled_seconds": 18.94,
+                "accuracy": 0.9915522703273495
+              },
+              "7": {
+                "sampled_seconds": 9.48,
+                "accuracy": 0.9915611814345991
+              }
+            },
+            "exact_chord": 0.9926121372031662
+          },
+          "current": {
+            "scores": {
+              "root": 0.9926121372031662,
+              "triad": 0.9926121372031662,
+              "seventh": 0.950395778364116
+            },
+            "boundaries": {
+              "f": 0.846153846153846,
+              "precision": 0.7333333333333333,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 15,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj7": {
+                "sampled_seconds": 9.48,
+                "accuracy": 0.9957805907172996
+              },
+              "min7": {
+                "sampled_seconds": 18.94,
+                "accuracy": 0.9070749736008448
+              },
+              "7": {
+                "sampled_seconds": 9.48,
+                "accuracy": 0.9915611814345991
+              }
+            },
+            "exact_chord": 0.950395778364116
+          }
+        },
+        {
+          "name": "eight_chord_loop",
+          "audio_sha256": "cc48948e2216c0f9c71a4ccd7238197c6a848caf60045d113996f69ed481d3ee",
+          "reference_sha256": "e2c9635ea7bc159420c2d391b178dc7e82b9dc81e8d900a58589a10930be8a18",
+          "duration": 36.923077,
+          "legacy": {
+            "scores": {
+              "root": 0.9853817000541418,
+              "triad": 0.9853817000541418,
+              "seventh": 0.9853817000541418
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 15,
+              "n_est": 15,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 23.12,
+                "accuracy": 0.986159169550173
+              },
+              "min": {
+                "sampled_seconds": 13.82,
+                "accuracy": 0.984081041968162
+              }
+            },
+            "exact_chord": 0.9853817000541418
+          },
+          "current": {
+            "scores": {
+              "root": 0.9853817000541418,
+              "triad": 0.9853817000541418,
+              "seventh": 0.983757444504602
+            },
+            "boundaries": {
+              "f": 0.967741935483871,
+              "precision": 0.9375,
+              "recall": 1.0,
+              "n_ref": 15,
+              "n_est": 16,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 23.12,
+                "accuracy": 0.9835640138408305
+              },
+              "min": {
+                "sampled_seconds": 13.82,
+                "accuracy": 0.984081041968162
+              }
+            },
+            "exact_chord": 0.983757444504602
+          }
+        },
+        {
+          "name": "half_bar_changes",
+          "audio_sha256": "323ce98ec3e00368e46b35c03a9016c5c471ee6a29b018ac7bd285b50a4d889f",
+          "reference_sha256": "749d8e72c0af8153f0bc1a8b8d6067081f3a9de8c904bf94ae446b7cb222054e",
+          "duration": 32.727273,
+          "legacy": {
+            "scores": {
+              "root": 0.9792302993280391,
+              "triad": 0.9792302993280391,
+              "seventh": 0.9792302993280391
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 23,
+              "n_est": 23,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 16.38,
+                "accuracy": 0.9804639804639804
+              },
+              "min": {
+                "sampled_seconds": 16.36,
+                "accuracy": 0.9779951100244498
+              }
+            },
+            "exact_chord": 0.9792302993280391
+          },
+          "current": {
+            "scores": {
+              "root": 0.9792302993280391,
+              "triad": 0.9792302993280391,
+              "seventh": 0.9792302993280391
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 23,
+              "n_est": 23,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 16.38,
+                "accuracy": 0.9804639804639804
+              },
+              "min": {
+                "sampled_seconds": 16.36,
+                "accuracy": 0.9779951100244498
+              }
+            },
+            "exact_chord": 0.9792302993280391
+          }
+        },
+        {
+          "name": "minor_loop",
+          "audio_sha256": "184fee0991dd292364c1858549e5384930f4d9f64169118f0acb50081e4e76a5",
+          "reference_sha256": "9b21f63b545425c818c84c1796290c0edd506e78d6470914a72dcacc407276e6",
+          "duration": 25.714286,
+          "legacy": {
+            "scores": {
+              "root": 0.9883359253499222,
+              "triad": 0.9883359253499222,
+              "seventh": 0.9883359253499222
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "min": {
+                "sampled_seconds": 6.44,
+                "accuracy": 0.9906832298136646
+              },
+              "maj": {
+                "sampled_seconds": 19.28,
+                "accuracy": 0.9875518672199171
+              }
+            },
+            "exact_chord": 0.9883359253499222
+          },
+          "current": {
+            "scores": {
+              "root": 0.9883359253499222,
+              "triad": 0.9883359253499222,
+              "seventh": 0.9883359253499222
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "min": {
+                "sampled_seconds": 6.44,
+                "accuracy": 0.9906832298136646
+              },
+              "maj": {
+                "sampled_seconds": 19.28,
+                "accuracy": 0.9875518672199171
+              }
+            },
+            "exact_chord": 0.9883359253499222
+          }
+        },
+        {
+          "name": "pop_I_V_vi_IV",
+          "audio_sha256": "d62de5f03e317cc23e9121684535eb01e92de16b9791dc04e53f379ebcbd9440",
+          "reference_sha256": "8e63739ad5c74cc5748584940f7aed30941f967852c5bf53833cff8a5febc43a",
+          "duration": 30.0,
+          "legacy": {
+            "scores": {
+              "root": 0.9920053297801465,
+              "triad": 0.9920053297801465,
+              "seventh": 0.9920053297801465
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 22.52,
+                "accuracy": 0.9920071047957372
+              },
+              "min": {
+                "sampled_seconds": 7.5,
+                "accuracy": 0.992
+              }
+            },
+            "exact_chord": 0.9920053297801465
+          },
+          "current": {
+            "scores": {
+              "root": 0.9920053297801465,
+              "triad": 0.9920053297801465,
+              "seventh": 0.9920053297801465
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 22.52,
+                "accuracy": 0.9920071047957372
+              },
+              "min": {
+                "sampled_seconds": 7.5,
+                "accuracy": 0.992
+              }
+            },
+            "exact_chord": 0.9920053297801465
+          }
+        }
+      ]
+    },
+    "stress": {
+      "aggregate_legacy": {
+        "root": 0.6816362896918909,
+        "triad": 0.6816362896918909,
+        "seventh": 0.28264260166803173
+      },
+      "aggregate_current": {
+        "root": 0.7442768198689984,
+        "triad": 0.7442768198689984,
+        "seventh": 0.7108546640589157
+      },
+      "settings_current": {
+        "legacy_chords": false,
+        "tracker_request": "librosa",
+        "vocabulary": "standard",
+        "separate": false
+      },
+      "settings_legacy": {
+        "legacy_chords": true,
+        "tracker_request": "librosa",
+        "vocabulary": "standard",
+        "separate": false
+      },
+      "environment": {
+        "python": "3.12.14",
+        "packages": {
+          "numpy": "1.26.4",
+          "librosa": "0.10.2.post1",
+          "scipy": "1.13.1",
+          "beat-this": null,
+          "torch": null
+        },
+        "analysis_version": 6,
+        "generator_sha256": "e66aa12f36a90ab1678931125ab4fcbb7570440df13149d722912ffb4e5ff38f",
+        "audio_frontend_sha256": "98ad993b81c42551761fbc887b39dcf402b804ed56088170a835d004ee4e861c",
+        "beat_tracker_sha256": "5152e9348de98d03ebef37ccc44efb0ce7934df9b72dc4dded4e292d97bb245f",
+        "metrics_sha256": "52af8d5b59a915701b461060478199beb89924204316217041c317321c0637d7",
+        "evaluation_protocol_sha256": "3b0a2edd68bb02595cecfca19ae70bbe15cf1c9ebc9f4425008062825471b38e"
+      },
+      "pipeline_sha256": "9cbe5fc02d20eac994d9af16ba74a2e2cbee6830d76111c52ea399cadce3d693",
+      "recognizer_sha256": "44cac0ad80aa28852b12b125d04eba6c9c9c7fda59679ccf56ba28766fc293a4",
+      "tracks": [
+        {
+          "name": "inversions",
+          "audio_sha256": "26ed0db21f8b9495ac87c0acb6d22bd1b70c2673cf9ccef6e88e7bd335bab0d8",
+          "reference_sha256": "f2d0c252dd2c00ffc64a398ed88b4dc81a6ec6dd04492b91419bc6e438e9a11b",
+          "duration": 31.304348,
+          "legacy": {
+            "scores": {
+              "root": 0.0,
+              "triad": 0.0,
+              "seventh": 0.0
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 20.88,
+                "accuracy": 0.0
+              },
+              "min": {
+                "sampled_seconds": 10.44,
+                "accuracy": 0.0
+              }
+            },
+            "exact_chord": 0.0
+          },
+          "current": {
+            "scores": {
+              "root": 0.0,
+              "triad": 0.0,
+              "seventh": 0.0
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 20.88,
+                "accuracy": 0.0
+              },
+              "min": {
+                "sampled_seconds": 10.44,
+                "accuracy": 0.0
+              }
+            },
+            "exact_chord": 0.0
+          }
+        },
+        {
+          "name": "one_beat_changes",
+          "audio_sha256": "f88a5c0b7520ebb7428ff23acdce259cc1a489c0201ba68663f728812e0dddac",
+          "reference_sha256": "23f0b9ac205f599669fea4bca11d2eb2fed798e2677d3e2be44a3afc40fdda1e",
+          "duration": 8.0,
+          "legacy": {
+            "scores": {
+              "root": 0.23690773067331672,
+              "triad": 0.23690773067331672,
+              "seventh": 0.1770573566084788
+            },
+            "boundaries": {
+              "f": 0.9655172413793104,
+              "precision": 1.0,
+              "recall": 0.9333333333333333,
+              "n_ref": 15,
+              "n_est": 14,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 6.0200000000000005,
+                "accuracy": 0.132890365448505
+              },
+              "min": {
+                "sampled_seconds": 2.0,
+                "accuracy": 0.31
+              }
+            },
+            "exact_chord": 0.14962593516209477
+          },
+          "current": {
+            "scores": {
+              "root": 0.9376558603491272,
+              "triad": 0.9376558603491272,
+              "seventh": 0.9376558603491272
+            },
+            "boundaries": {
+              "f": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "n_ref": 15,
+              "n_est": 15,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 6.0200000000000005,
+                "accuracy": 0.9401993355481728
+              },
+              "min": {
+                "sampled_seconds": 2.0,
+                "accuracy": 0.93
+              }
+            },
+            "exact_chord": 0.9376558603491272
+          }
+        },
+        {
+          "name": "quality_two_beats",
+          "audio_sha256": "cda1cf7229e893728859a4273319a7b97f454906454c89a9c27e85905ef4bfdc",
+          "reference_sha256": "6023506b7cba1f7cbc795902071398a5cc2c416bd5d82a2145e32cbfc426666c",
+          "duration": 8.571429,
+          "legacy": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.2494172494172494
+            },
+            "boundaries": {
+              "f": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "n_ref": 7,
+              "n_est": 0,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 2.14,
+                "accuracy": 1.0
+              },
+              "maj7": {
+                "sampled_seconds": 2.16,
+                "accuracy": 0.0
+              },
+              "7": {
+                "sampled_seconds": 2.14,
+                "accuracy": 0.0
+              },
+              "6": {
+                "sampled_seconds": 2.14,
+                "accuracy": 0.0
+              }
+            },
+            "exact_chord": 0.2494172494172494
+          },
+          "current": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.9137529137529138
+            },
+            "boundaries": {
+              "f": 0.9333333333333333,
+              "precision": 0.875,
+              "recall": 1.0,
+              "n_ref": 7,
+              "n_est": 8,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 2.14,
+                "accuracy": 0.9906542056074766
+              },
+              "maj7": {
+                "sampled_seconds": 2.16,
+                "accuracy": 0.9629629629629629
+              },
+              "7": {
+                "sampled_seconds": 2.14,
+                "accuracy": 0.7289719626168224
+              },
+              "6": {
+                "sampled_seconds": 2.14,
+                "accuracy": 0.9719626168224299
+              }
+            },
+            "exact_chord": 0.9137529137529138
+          }
+        },
+        {
+          "name": "same_root_major",
+          "audio_sha256": "afc19af02dbb0fa08948aa7a95759009f52840dae3b203e9b8535b32e6aea4bb",
+          "reference_sha256": "d9a0f9f36ada2ade8f1cf85b8d1990c193fb60e19d5d73e4a763fa8081464b1e",
+          "duration": 20.0,
+          "legacy": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.24975024975024976
+            },
+            "boundaries": {
+              "f": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "n_ref": 7,
+              "n_est": 0,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 5.0,
+                "accuracy": 1.0
+              },
+              "7": {
+                "sampled_seconds": 5.0200000000000005,
+                "accuracy": 0.0
+              },
+              "maj7": {
+                "sampled_seconds": 5.0,
+                "accuracy": 0.0
+              },
+              "6": {
+                "sampled_seconds": 5.0,
+                "accuracy": 0.0
+              }
+            },
+            "exact_chord": 0.24975024975024976
+          },
+          "current": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.961038961038961
+            },
+            "boundaries": {
+              "f": 0.8750000000000001,
+              "precision": 0.7777777777777778,
+              "recall": 1.0,
+              "n_ref": 7,
+              "n_est": 9,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 5.0,
+                "accuracy": 0.996
+              },
+              "7": {
+                "sampled_seconds": 5.0200000000000005,
+                "accuracy": 0.8645418326693227
+              },
+              "maj7": {
+                "sampled_seconds": 5.0,
+                "accuracy": 0.992
+              },
+              "6": {
+                "sampled_seconds": 5.0,
+                "accuracy": 0.992
+              }
+            },
+            "exact_chord": 0.961038961038961
+          }
+        },
+        {
+          "name": "same_root_minor",
+          "audio_sha256": "4c87d5fb5902bc4eceb857f9decbd6ed95a318d8befc55d04dbfd9307eacaeac",
+          "reference_sha256": "eb6f9d1abf63a33361ae92125baf87176773bf598ec103a378b173d70af789f0",
+          "duration": 18.461538,
+          "legacy": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.25
+            },
+            "boundaries": {
+              "f": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "n_ref": 7,
+              "n_est": 0,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "min": {
+                "sampled_seconds": 4.62,
+                "accuracy": 1.0
+              },
+              "min7": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.0
+              },
+              "minmaj7": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.0
+              },
+              "min6": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.0
+              }
+            },
+            "exact_chord": 0.25
+          },
+          "current": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.9556277056277056
+            },
+            "boundaries": {
+              "f": 0.9333333333333333,
+              "precision": 0.875,
+              "recall": 1.0,
+              "n_ref": 7,
+              "n_est": 8,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "min": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.9913419913419913
+              },
+              "min7": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.8658008658008658
+              },
+              "minmaj7": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.9826839826839827
+              },
+              "min6": {
+                "sampled_seconds": 4.62,
+                "accuracy": 0.9826839826839827
+              }
+            },
+            "exact_chord": 0.9556277056277056
+          }
+        },
+        {
+          "name": "same_root_sus",
+          "audio_sha256": "aea3ae736458db09d50cfa2984b0d4ff6fd51807221885c01ed35979a70f3e32",
+          "reference_sha256": "0aa9967dda0b492ab1fd32d05769d29184e8b1cc188018603d34e6ed22385081",
+          "duration": 19.2,
+          "legacy": {
+            "scores": {
+              "root": 0.9958376690946931,
+              "triad": 0.9958376690946931,
+              "seventh": 0.2497398543184183
+            },
+            "boundaries": {
+              "f": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "n_ref": 7,
+              "n_est": 1,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 4.8,
+                "accuracy": 1.0
+              },
+              "sus4": {
+                "sampled_seconds": 4.82,
+                "accuracy": 0.0
+              },
+              "sus2": {
+                "sampled_seconds": 4.8,
+                "accuracy": 0.0
+              },
+              "7": {
+                "sampled_seconds": 4.8,
+                "accuracy": 0.0
+              }
+            },
+            "exact_chord": 0.2497398543184183
+          },
+          "current": {
+            "scores": {
+              "root": 1.0,
+              "triad": 1.0,
+              "seventh": 0.9042663891779397
+            },
+            "boundaries": {
+              "f": 0.8750000000000001,
+              "precision": 0.7777777777777778,
+              "recall": 1.0,
+              "n_ref": 7,
+              "n_est": 9,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 4.8,
+                "accuracy": 0.9958333333333333
+              },
+              "sus4": {
+                "sampled_seconds": 4.82,
+                "accuracy": 0.9875518672199171
+              },
+              "sus2": {
+                "sampled_seconds": 4.8,
+                "accuracy": 0.9958333333333333
+              },
+              "7": {
+                "sampled_seconds": 4.8,
+                "accuracy": 0.6375
+              }
+            },
+            "exact_chord": 0.9042663891779397
+          }
+        },
+        {
+          "name": "three_pulse_harmony",
+          "audio_sha256": "00db4b64d7e02e5d25c23c724e1855e41cc6b741cd0c4904ca65235a617b86cc",
+          "reference_sha256": "0553ddef671e9250fe60659fe36b5d6e6334bfb54d3255c2cc5580851a0ab168",
+          "duration": 20.0,
+          "legacy": {
+            "scores": {
+              "root": 0.8761238761238761,
+              "triad": 0.8761238761238761,
+              "seventh": 0.8761238761238761
+            },
+            "boundaries": {
+              "f": 0.6363636363636364,
+              "precision": 0.6363636363636364,
+              "recall": 0.6363636363636364,
+              "n_ref": 11,
+              "n_est": 11,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 10.02,
+                "accuracy": 0.8802395209580839
+              },
+              "min": {
+                "sampled_seconds": 10.0,
+                "accuracy": 0.872
+              }
+            },
+            "exact_chord": 0.8761238761238761
+          },
+          "current": {
+            "scores": {
+              "root": 0.985014985014985,
+              "triad": 0.985014985014985,
+              "seventh": 0.984015984015984
+            },
+            "boundaries": {
+              "f": 0.9565217391304348,
+              "precision": 0.9166666666666666,
+              "recall": 1.0,
+              "n_ref": 11,
+              "n_est": 12,
+              "tolerance_seconds": 0.1
+            },
+            "by_quality": {
+              "maj": {
+                "sampled_seconds": 10.02,
+                "accuracy": 0.9860279441117764
+              },
+              "min": {
+                "sampled_seconds": 10.0,
+                "accuracy": 0.982
+              }
+            },
+            "exact_chord": 0.984015984015984
+          }
+        }
+      ]
+    }
+  },
+  "verification": {
+    "pytest_passed": 408,
+    "pytest_warnings": 4,
+    "touch_chromium_widths": [
+      390,
+      834
+    ],
+    "browser_regression_width": 834,
+    "real_safari_tested": false
+  }
+}

@@ -80,6 +80,8 @@ class AnalysisResult:
     # 표시 이름(source)은 바뀔 수 있으므로 그걸 키로 쓰면 안 된다.
     source_key: str = ""
     audio_path: str = ""         # 벤치마크에서 재분석할 때 필요
+    execution: Dict[str, Any] = field(default_factory=dict)
+    audio_link: Optional[Dict[str, Any]] = None
     corrected: int = 0           # 사용자가 고친 구간 수
 
     @property
@@ -121,6 +123,8 @@ class AnalysisResult:
             source_key=data.get("source_key", ""),
             audio_path=data.get("audio_path", ""),
             corrected=data.get("corrected", 0),
+            execution=data.get("execution", {}),
+            audio_link=data.get("audio_link"),
         )
 
     def bars(self) -> List[Dict[str, Any]]:
@@ -149,11 +153,17 @@ class AnalysisResult:
             if beat_len <= 0:
                 continue
 
+            # 검출된 박이 마디 내부에 정확히 들어맞으면 일정 간격으로
+            # 재분할하지 않고 실제 검출 시각을 차트 칸 경계로 쓴다.
+            interior = [t for t in self.beat_times if bar_start + 1e-4 < t < bar_end - 1e-4]
+            edges = ([bar_start, *interior, bar_end] if len(interior) == beats_per_bar - 1
+                     else [bar_start + beat * beat_len for beat in range(beats_per_bar + 1)])
+
             slots: List[Dict[str, Any]] = []
             previous: Optional[int] = None
             for beat in range(beats_per_bar):
                 # 박의 중앙을 보는 게 경계 오차에 강하다
-                moment = bar_start + (beat + 0.5) * beat_len
+                moment = (edges[beat] + edges[beat + 1]) / 2
                 seg_index = self._segment_at(moment)
                 if seg_index is None:
                     slots.append({"beat": beat + 1, "chord": None, "index": None})
@@ -173,8 +183,8 @@ class AnalysisResult:
                     "held": is_new and seg.start < bar_start - 1e-6,
                     # 이 칸 자체의 시간 범위. 칸 단위로 코드를 고칠 때 쓴다 —
                     # 한 코드로 묶인 구간을 이 박에서 갈라낼 수 있어야 한다.
-                    "start": round(bar_start + beat * beat_len, 3),
-                    "end": round(bar_start + (beat + 1) * beat_len, 3),
+                    "start": round(edges[beat], 3),
+                    "end": round(edges[beat + 1], 3),
                     # 이 칸에 새 코드를 넣으면 원래 코드가 끝나던 데까지 적용된다
                     "segment_end": round(seg.end, 3),
                 })
@@ -226,6 +236,8 @@ class AnalysisResult:
             "source_key": self.source_key,
             "audio_path": self.audio_path,
             "corrected": self.corrected,
+            "execution": self.execution,
+            "audio_link": self.audio_link,
             "duration": round(self.duration, 3),
             "tempo": round(self.tempo, 2),
             "key": self.key.name(),

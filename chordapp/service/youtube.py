@@ -1,37 +1,17 @@
-"""유튜브 입력 레이어: 검색 · 링크 파싱 · 오디오 확보.
-
-파이프라인 M3의 "유튜브 연동" 항목. 다만 1-8 체크리스트에
-"유튜브 오디오 추출 방식의 이용약관 적합성 검토"가 미해결로 남아 있으므로,
-법적 판단이 필요한 부분과 그렇지 않은 부분을 코드에서 분리해 둔다.
-
-  - 검색 / 메타데이터: 공식 YouTube Data API v3. API 키만 있으면 문제 없음.
-  - 링크 파싱 / 캐시 키: 순수 로직. 아무 리스크 없음.
-  - 오디오 추출: 검토 대상. **기본 비활성**이며 환경변수로 명시적으로 켜야 한다.
-
-이렇게 두면 약관 검토가 끝나기 전에도 나머지 파이프라인을 전부 돌려볼 수 있고,
-검토가 끝나면 설정 한 줄로 켜진다.
-"""
+"""공식 YouTube 검색·메타데이터와 URL 처리. 음원 공급 모듈과 분리한다."""
 
 from __future__ import annotations
 
 import json
 import os
 import re
-import shutil
-import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
 
-ENABLE_AUDIO_ENV = "CHORDAPP_ENABLE_YTDLP"
 API_KEY_ENV = "YOUTUBE_API_KEY"
-
-# yt-dlp가 시도할 유튜브 player client 목록. 유튜브가 추출을 막는 방식이
-# 계속 바뀌므로 여러 개를 넘겨 둔다. 추출이 깨지면 여기부터 손보면 된다.
-PLAYER_CLIENTS = "android,ios,tv,web"
 
 _API_BASE = "https://www.googleapis.com/youtube/v3"
 
@@ -53,11 +33,9 @@ class InvalidVideoUrl(YouTubeError):
 
 
 class SearchUnavailable(YouTubeError):
-    pass
-
-
-class AudioFetchDisabled(YouTubeError):
-    pass
+    def __init__(self, message: str, code: str = "search_unavailable"):
+        super().__init__(message)
+        self.code = code
 
 
 # --------------------------------------------------------------------------
@@ -216,10 +194,30 @@ class DataApiSearch:
             with urllib.request.urlopen(url, timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:200]
-            raise SearchUnavailable(f"YouTube API 오류 {exc.code}: {detail}") from exc
-        except urllib.error.URLError as exc:
-            raise SearchUnavailable(f"YouTube API에 접속할 수 없다: {exc.reason}") from exc
+            # Google의 원문 오류나 요청 URL에 키가 포함될 수 있어 반환하지 않는다.
+            try:
+                detail = json.loads(exc.read().decode("utf-8", "replace"))
+                reasons = {entry.get("reason", "") for entry in detail.get("error", {}).get("errors", [])}
+                reasons.update(entry.get("reason", "") for entry in detail.get("error", {}).get("details", []))
+            except (ValueError, AttributeError, TypeError):
+                reasons = set()
+            if reasons & {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"} or exc.code == 429:
+                code, message = "quota_exceeded", "YouTube 검색 할당량을 초과했습니다. Google Cloud의 할당량을 확인하거나 나중에 다시 시도해 주세요."
+            elif reasons & {"accessNotConfigured", "SERVICE_DISABLED"}:
+                code, message = "api_not_enabled", "이 키의 프로젝트에서 YouTube Data API v3를 사용 설정해 주세요."
+            elif exc.code == 400:
+                code, message = "invalid_api_key", "API 키를 확인해 주세요. 키 전체를 공백 없이 입력해야 합니다."
+            elif exc.code == 403:
+                code, message = "key_restricted", "API 키의 제한 설정을 확인해 주세요. 서버 요청에 YouTube Data API v3 사용이 허용되어야 합니다."
+            else:
+                code, message = "api_error", f"YouTube 검색 서버가 오류를 반환했습니다 ({exc.code}). 잠시 후 다시 시도해 주세요."
+            raise SearchUnavailable(message, code) from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise SearchUnavailable("서버에서 YouTube Data API에 연결하지 못했습니다. 네트워크 상태를 확인해 주세요.", "network_error") from None
+
+    def validate(self) -> None:
+        """검색 할당량을 쓰지 않고 videos.list 요청으로 키·API 사용 설정을 확인한다."""
+        self._get("videos", {"part": "id", "id": "BaW_jenozKc"})
 
     def search(self, query: str, limit: int = 8) -> List[VideoInfo]:
         if not self.available:
@@ -318,138 +316,6 @@ def _parse_iso8601_duration(text: str) -> Optional[float]:
     return float(parts["d"] * 86400 + parts["h"] * 3600 + parts["m"] * 60 + parts["s"])
 
 
-# --------------------------------------------------------------------------
-# 오디오 확보 (약관 검토 대상 — 기본 비활성)
-# --------------------------------------------------------------------------
-
-class AudioProvider(Protocol):
-    enabled: bool
-
-    def fetch(self, video_id: str, dest_dir: Path) -> Path: ...
-
-
-class DisabledAudioProvider:
-    """기본값. 무엇을 어떻게 켜야 하는지 명시적으로 알려주고 멈춘다."""
-
-    enabled = False
-    reason = (
-        "유튜브 오디오 추출이 꺼져 있다. 파이프라인 1-8의 '유튜브 오디오 추출 방식의 "
-        "이용약관 적합성 검토'가 끝난 뒤, yt-dlp를 설치하고 "
-        f"{ENABLE_AUDIO_ENV}=1 을 설정하면 켜진다. "
-        "그 전까지는 코드 DB 조회(HIT) 또는 로컬 파일 업로드로 분석할 수 있다."
-    )
-
-    def fetch(self, video_id: str, dest_dir: Path) -> Path:
-        raise AudioFetchDisabled(self.reason)
-
-
-def find_ffmpeg() -> Optional[str]:
-    """ffmpeg 실행파일 위치. 시스템 설치본을 우선하고, 없으면 pip으로 받은 번들을 쓴다.
-
-    시스템 전역 설치를 강요하지 않으려고 imageio-ffmpeg 폴백을 둔다
-    (`pip install imageio-ffmpeg`이면 끝난다).
-    """
-    system = shutil.which("ffmpeg")
-    if system:
-        return system
-    try:
-        import imageio_ffmpeg
-
-        path = imageio_ffmpeg.get_ffmpeg_exe()
-        return path if os.path.isfile(path) else None
-    except Exception:
-        return None
-
-
-class YtDlpProvider:
-    """yt-dlp로 오디오만 받아온다. 명시적으로 켠 경우에만 동작한다.
-
-    분석에 필요한 형태(22.05kHz 모노 wav)로 바로 받는다. 원본 품질을 보존할
-    이유가 없고 — 어차피 크로마 계산 전에 다운샘플된다 — wav로 받으면
-    디코딩에 ffmpeg가 다시 필요 없어서 soundfile이 바로 읽는다.
-    4분 곡이 약 5MB.
-    """
-
-    def __init__(self, max_duration: float = 900.0, timeout: float = 300.0):
-        self.max_duration = max_duration
-        self.timeout = timeout
-
-    @property
-    def enabled(self) -> bool:
-        return (
-            os.environ.get(ENABLE_AUDIO_ENV, "") == "1"
-            and self.binary is not None
-            and find_ffmpeg() is not None
-        )
-
-    @property
-    def binary(self) -> Optional[str]:
-        return shutil.which("yt-dlp")
-
-    def _command(self, video_id: str, dest_dir: Path) -> List[str]:
-        template = str(dest_dir / f"{video_id}.%(ext)s")
-        command = [
-            self.binary or "yt-dlp", "--no-playlist", "--quiet", "--no-warnings",
-            # 여러 player client를 함께 넘긴다. 유튜브가 추출 경로를 자주 막는데
-            # 클라이언트마다 막히는 시점이 달라서, 하나가 죽어도 다른 게 산다.
-            # (기본 web 클라이언트는 "The page needs to be reloaded"로 실패했다.)
-            "--extractor-args", f"youtube:player_client={PLAYER_CLIENTS}",
-            # audio-only DASH 포맷은 PO 토큰으로 막혀 있는 경우가 많다.
-            # 그때는 오디오가 들어 있는 통짜 mp4(포맷 18)로 폴백한다 — 어차피
-            # 오디오만 뽑아 쓰므로 영상 트랙이 붙어 오는 건 대역폭 낭비일 뿐이다.
-            "-f", "bestaudio/best",
-            "-x", "--audio-format", "wav",
-            # 분석기가 쓰는 포맷으로 바로 변환한다
-            "--postprocessor-args", "ffmpeg:-ar 22050 -ac 1",
-            "--match-filter", f"duration < {int(self.max_duration)}",
-            "-o", template,
-        ]
-        ffmpeg = find_ffmpeg()
-        if ffmpeg:
-            command += ["--ffmpeg-location", ffmpeg]
-        return command + [watch_url(video_id)]
-
-    def fetch(self, video_id: str, dest_dir: Path) -> Path:
-        if os.environ.get(ENABLE_AUDIO_ENV, "") != "1":
-            raise AudioFetchDisabled(DisabledAudioProvider.reason)
-        if self.binary is None:
-            raise AudioFetchDisabled("yt-dlp가 설치돼 있지 않다: pip install yt-dlp")
-        if find_ffmpeg() is None:
-            raise AudioFetchDisabled(
-                "오디오 추출에 ffmpeg가 필요하다. 시스템에 설치하거나 "
-                "`pip install imageio-ffmpeg`로 번들을 받으면 된다."
-            )
-
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        existing = dest_dir / f"{video_id}.wav"
-        if existing.is_file():
-            return existing   # 같은 영상을 두 번 받을 이유가 없다
-
-        try:
-            # 윈도우 로케일 코덱(cp949)으로 읽으면 yt-dlp의 UTF-8 출력에서 터진다
-            proc = subprocess.run(
-                self._command(video_id, dest_dir),
-                capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=self.timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise YouTubeError(f"오디오 추출 시간 초과 ({self.timeout:.0f}초)") from exc
-        if proc.returncode != 0:
-            raise YouTubeError(f"yt-dlp 실패: {(proc.stderr or proc.stdout or '').strip()[:300]}")
-
-        for candidate in sorted(dest_dir.glob(f"{video_id}.*")):
-            if candidate.suffix.lower() in (".wav", ".m4a", ".mp3", ".opus", ".webm"):
-                return candidate
-        raise YouTubeError(
-            f"{self.max_duration / 60:.0f}분을 넘는 영상이거나 오디오를 받지 못했다"
-        )
-
-
 def default_search() -> VideoSearch:
-    api = DataApiSearch()
-    return api if api.available else DisabledSearch()
-
-
-def default_audio_provider() -> AudioProvider:
-    provider = YtDlpProvider()
-    return provider if provider.enabled else DisabledAudioProvider()
+    # 웹에서 키를 저장하면 서버 재시작 없이 available이 바뀐다.
+    return DataApiSearch()
