@@ -19,7 +19,9 @@ def git(root, *args):
 def projects(tmp_path):
     source = tmp_path / 'source'
     source.mkdir()
-    git(source, 'init', '-b', 'main')
+    # Ubuntu 20.04의 Git 2.25에는 init -b가 없다. 전역 설정은 바꾸지 않는다.
+    git(source, 'init')
+    git(source, 'symbolic-ref', 'HEAD', 'refs/heads/main')
     git(source, 'config', 'user.email', 'test@example.invalid')
     git(source, 'config', 'user.name', 'Test')
     (source / 'scripts').mkdir()

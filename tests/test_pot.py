@@ -84,6 +84,9 @@ def test_start_failure_is_explicit(pot_env, monkeypatch):
 def test_wrong_source_commit_is_not_overwritten(pot_env, monkeypatch):
     _,source=pot_env
     (source/'.chordapp-installed.json').unlink()
+    # 이 시험은 소스 보존 계약만 확인한다. 실제 Deno 설치 여부와 분리한다.
+    monkeypatch.setattr('chordapp.service.private_youtube.find_deno', lambda: '/fixture/deno')
+    monkeypatch.setattr(pot, '_run', lambda *a, **kw: pytest.fail('외부 설치를 실행하면 안 됩니다.'))
     monkeypatch.setattr(pot.subprocess,'check_output',lambda *a,**kw:'wrong-sha')
     with pytest.raises(pot.PotError,match='덮어쓰지'):
         pot.install()
