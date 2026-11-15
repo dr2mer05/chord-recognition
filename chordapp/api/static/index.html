@@ -320,12 +320,19 @@
   <div class="panel hidden" id="beatPanel">
     <h2>
       <span id="beatStateBadge" class="badge auto">자동</span>
-      박자 조정
-      <span class="hint" style="text-transform:none">— 코드보다 먼저. 마디가 어긋나면 여기서 맞춘다</span>
-      <button id="beatToggle" class="linkish">접기</button>
+      템포 배수 보정
+      <button id="beatToggle" class="linkish" hidden>접기</button>
     </h2>
 
     <div id="beatBody">
+      <p class="hint">자동으로 분석합니다. 템포가 두 배 빠르거나 느리게 인식된 경우에만 조정해 주세요.</p>
+      <div class="row">
+        <button id="tempoHalf">템포 절반</button>
+        <button id="tempoDouble">템포 두 배</button>
+        <button id="tempoAuto">자동으로 되돌리기</button>
+        <span id="tempoStatus" class="hint" role="status"></span>
+      </div>
+      <div hidden>
       <ol class="steps">
         <li><b>메트로놈</b>을 켜고 재생해 클릭이 곡과 맞는지 듣는다</li>
         <li>어긋나면 <b>탭 템포</b>로 마디 첫 박을 4번 이상 찍는다 (<kbd>T</kbd>)</li>
@@ -342,13 +349,10 @@
 
       <div class="row" style="margin-top:10px">
         <label>템포</label>
-        <button id="tempoHalf" title="2배로 잘못 잡혔을 때">÷2</button>
         <button id="tempo15down" title="1.5배로 잘못 잡혔을 때 (12/8 등 겹박자)">÷1.5</button>
         <input id="tempoBpm" size="5" placeholder="BPM">
         <button id="tempo15up">×1.5</button>
-        <button id="tempoDouble">×2</button>
         <button class="primary" id="tempoSet">지정</button>
-        <span id="tempoStatus" class="hint"></span>
       </div>
 
       <div class="row" style="margin-top:10px">
@@ -374,6 +378,7 @@
         <button id="beatReset">↺ 박자 전부 자동으로</button>
         <span class="hint">— 지정한 템포·박자·마디 시작을 모두 지운다</span>
       </div>
+      </div>
     </div>
   </div>
 
@@ -381,7 +386,7 @@
   <div class="panel hidden" id="fixPanel">
     <div class="row">
       <span class="hint">
-        <b style="color:var(--text)">코드 칸을 눌러 수정</b> — 터치는 저장·취소 버튼, 키보드는 Enter·Esc.
+        <b style="color:var(--text)">코드 칸을 선택하고 수정 버튼을 누르세요</b> — 터치는 저장·취소 버튼, 키보드는 Enter·Esc.
         <code>/</code> 칸을 고치면 그 박부터 코드가 나뉜다. 선택 중:
         <b id="fixCurrent" style="color:var(--text)">–</b>
       </span>
@@ -1034,7 +1039,7 @@ $('chordEditForm').onsubmit = async e => {
 async function applyTempo(bpm, beatOffset) {
   if (!state.sourceKey) return;
   if (!state.canReanalyzeSaved) { setText('tempoStatus', '이전 분석 설정이나 음원이 없어 조정할 수 없습니다. 원본 파일을 다시 선택해 주세요.', true); return; }
-  const buttons = ['tempoHalf', 'tempoDouble', 'tempo15down', 'tempo15up', 'tempoSet', 'beatReset'];
+  const buttons = ['tempoHalf', 'tempoDouble', 'tempoAuto', 'tempo15down', 'tempo15up', 'tempoSet', 'beatReset'];
   buttons.forEach(id => $(id).disabled = true);
   setText('tempoStatus', '<span class="spin"></span> 다시 분석 중…');
   try {
@@ -1055,6 +1060,7 @@ async function applyTempo(bpm, beatOffset) {
 
 $('tempoHalf').onclick = () => applyTempo(state.tempo / 2);
 $('tempoDouble').onclick = () => applyTempo(state.tempo * 2);
+$('tempoAuto').onclick = () => applyTempo(null);
 // 12/8 같은 겹박자에서는 오차가 2배가 아니라 1.5배로 난다.
 // (4분음표 격자와 점4분음표 격자의 비가 3:2)
 $('tempo15down').onclick = () => applyTempo(state.tempo / 1.5);
@@ -1071,7 +1077,6 @@ $('beatToggle').onclick = () => {
   $('beatToggle').textContent = hidden ? '펼치기' : '접기';
   localStorage.setItem('beatPanelCollapsed', hidden ? '1' : '');
 };
-if (localStorage.getItem('beatPanelCollapsed')) $('beatToggle').onclick();
 
 /** 자동 추정인지 사용자가 지정했는지 한눈에 보여준다. */
 function updateBeatBadge() {
@@ -1099,16 +1104,6 @@ $('beatReset').onclick = async () => {
     setText('meterStatus', esc(e.message), true);
   }
 };
-
-// 탭 템포는 마우스로 누르기 어렵다. 재생하며 박에 맞춰 눌러야 하므로 키가 편하다.
-document.addEventListener('keydown', e => {
-  if (e.key !== 't' && e.key !== 'T' && e.key !== 'ㅅ') return;
-  const el = document.activeElement;
-  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
-  if ($('beatPanel').classList.contains('hidden')) return;
-  e.preventDefault();
-  $('tapTempo').click();
-});
 
 /* ---------- 표시 보정 ---------- */
 function setSyncOffset(seconds) {

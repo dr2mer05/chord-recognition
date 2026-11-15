@@ -453,6 +453,9 @@ def open_saved_analysis(identifier: str) -> JSONResponse:
         report['warnings'].append('이전 캐시의 박자 설정은 저장 당시 상태를 확인할 수 없습니다.')
     path = (UPLOAD_DIR / row['audio_name']).resolve()
     if path.parent == UPLOAD_DIR.resolve() and path.is_file():
+        # 서버 이전 후 저장된 절대 경로를 현재 위치로 갱신한다.
+        result.audio_path = str(path)
+        service._register(result)
         report['audio_url'] = f'/api/audio/{path.name}'
     return JSONResponse(report)
 

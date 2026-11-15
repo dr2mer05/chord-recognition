@@ -24,16 +24,20 @@ const assert = require('node:assert/strict');
  await page.locator('#registerSource').click();
  await page.waitForFunction(()=>document.querySelector('#ytStatus').textContent.includes('분석을 완료했습니다'),{},{timeout:120000});
  assert(await page.locator('#resultPanel').isVisible());
+ assert(await page.locator('#tempoHalf').isVisible());
+ assert(await page.locator('#tempoDouble').isVisible());
+ assert.equal(await page.locator('#tapTempo').isVisible(), false);
+ assert.equal(await page.locator('#meterButtons').isVisible(), false);
  const first = await page.evaluate(()=>({sourceKey:state.sourceKey, segmentCount:state.segments.length, offset:state.videoOffset}));
  assert(first.sourceKey.startsWith('linked:' + videoId + ':')); assert(first.segmentCount>0); assert.equal(first.offset,5);
  const expectedMeter = Number(process.env.CHORDAPP_EXPECTED_METER || 0);
  if (expectedMeter) {
   assert.equal(await page.evaluate(()=>state.beatsPerBar),expectedMeter);
   assert(await page.locator('.measure .chips').evaluateAll((nodes,m)=>nodes.every(n=>n.children.length===m),expectedMeter));
-  await page.locator('#meterButtons [data-m="4"]').click();
+  await page.evaluate(()=>applyMeter(4,0));
   await page.waitForFunction(()=>state.beatsPerBar===4 && state.meterOverride===4);
   assert(await page.locator('.measure .chips').evaluateAll(nodes=>nodes.every(n=>n.children.length===4)));
-  await page.locator('#meterButtons [data-m="0"]').click();
+  await page.evaluate(()=>applyMeter(null,0));
   await page.waitForFunction(m=>state.beatsPerBar===m && !state.meterOverride,expectedMeter);
   assert((await page.locator('#meta').textContent()).includes('저장된 결과'));
  }
