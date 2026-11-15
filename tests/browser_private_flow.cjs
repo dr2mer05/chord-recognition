@@ -37,6 +37,7 @@ const assert = require('node:assert/strict');
   assert((await page.locator('#analysisOrigin').textContent()).includes('음원은 삭제'));
   assert((await page.evaluate(()=>state.sourceKey)).startsWith('private-youtube:'));
   await page.locator('.chip[data-i="0"]').first().click();
+  await page.locator('#editSelectedBeat').click();
   await page.locator('#editorChord').fill('Am7');await page.locator('#editorSave').click();
   await page.waitForFunction(()=>state.segments[0].chord==='Am7');
   await page.reload();await page.locator('#url').fill(video);await page.locator('#doYt').click();

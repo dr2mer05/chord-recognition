@@ -77,7 +77,7 @@
   .chip {
     min-width: 0; cursor: pointer; border-radius: 5px;
     padding: 2px 3px; transition: .12s; position: relative; overflow: hidden;
-    border: 1px solid transparent;
+    border: 1px solid var(--line);
   }
   /* 앞 박에서 이어지는 칸 */
   .chip.cont .name { color: #4d5666; font-weight: 400; font-size: 13px; }
@@ -96,8 +96,6 @@
   .chip .roman { color: var(--dim); font-size: 10.5px; }
   .chip .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); width: 0; }
   /* 앞 마디에서 이어진 코드는 흐리게 — 새로 친 코드와 구별한다 */
-  .chip.held .name { opacity: .45; font-weight: 500; }
-  .chip.held .name::before { content: "/"; color: var(--dim); margin-right: 1px; }
   /* 확신도 3단계. 실제 녹음은 대부분 mid 이하로 나오므로 이진 표시로는 정보가 안 된다. */
   .chip.mid .name::after { content: "·"; color: var(--dim); font-size: 12px; vertical-align: super; }
   .chip.low .name::after { content: "?"; color: var(--warn); font-size: 11px; vertical-align: super; }
@@ -305,8 +303,9 @@
         <div id="warnings"></div>
       </div>
       <div>
-        <h2>코드 차트 <span class="hint" style="text-transform:none">— 클릭하면 대체안</span></h2>
+        <h2>코드 차트 <span class="hint" style="text-transform:none">— 박을 누르면 해당 위치로 이동</span></h2>
         <p class="hint">색상과 내부 점수는 검토할 구간을 고르는 참고값이며, 정답 확률은 아닙니다.</p>
+        <button id="editSelectedBeat" type="button" disabled>선택한 박의 코드 수정</button>
         <div class="chart" id="chart"></div>
       </div>
     </div>
@@ -817,6 +816,9 @@ function render(data, elapsed) {
 function renderChart(rows, segments, bars) {
   state.rows = rows;
   state.selected = -1;
+  state.selectedChip = null;
+  $('editSelectedBeat').disabled = true;
+  state.activeChip = null;
   const chart = $('chart');
 
   // 마디 정보가 있으면 코드보처럼 마디로 끊어 보여준다
@@ -835,9 +837,12 @@ function renderChart(rows, segments, bars) {
       const seg = segments ? segments[s.index] : null;
       const title = seg ? `내부 점수 ${Math.min(seg.confidence, seg.agreement).toFixed(2)} (정답 확률 아님) · ${fmtTime(seg.start)}` : '';
       // 칸마다 자기 시간 범위를 들고 있어야 이 박에서 코드를 갈라낼 수 있다
-      const span = `data-i="${s.index}" data-start="${s.start}" data-end="${s.segment_end}"`;
+      const start = Number.isFinite(s.start) ? s.start : (seg ? seg.start : 0);
+      const end = Number.isFinite(s.end) ? s.end : (seg ? seg.end : start);
+      const editEnd = Number.isFinite(s.segment_end) ? s.segment_end : (seg ? seg.end : end);
+      const span = `data-i="${s.index}" data-start="${start}" data-end="${end}" data-edit-end="${editEnd}"`;
       if (s.chord === null) {   // 앞 박에서 이어지는 칸
-        return `<div class="chip cont" ${span} title="${esc(title)} · 클릭하면 이 박부터 코드를 나눌 수 있다">
+        return `<div class="chip cont" ${span} title="${esc(title)}">
           <div class="name">/</div><div class="bar"></div></div>`;
       }
       const grade = s.grade && s.grade !== 'high' ? ' ' + s.grade : '';
@@ -854,29 +859,37 @@ function renderChart(rows, segments, bars) {
 
   // 구간별 칸 목록을 미리 만들어 둔다 (매 프레임 DOM을 훑지 않기 위해)
   state.chipsBySegment = {};
+  state.timedChips = [];
   state.activeSegment = -1;
   [...chart.querySelectorAll('.chip')].forEach(chip => {
     if (chip.dataset.i === undefined) return;
     chip.tabIndex = 0;
     chip.setAttribute('role', 'button');
-    chip.setAttribute('aria-label', `${chip.querySelector('.name').textContent} 코드 수정`);
+    chip.setAttribute('aria-label', `${chip.querySelector('.name').textContent} · ${fmtTime(+chip.dataset.start)}로 이동`);
     chip.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chip.click(); } };
     (state.chipsBySegment[+chip.dataset.i] ||= []).push(chip);
+    state.timedChips.push(chip);
     chip.onclick = () => {
       const i = +chip.dataset.i;
-      seek(i);
+      seek(i, +chip.dataset.start);
       selectChord(i);
-      // 클릭한 칸이 그대로 입력창이 된다. 칸의 시간 범위를 함께 넘겨서
-      // 마디 중간 박에서도 코드를 갈라낼 수 있게 한다.
-      startEdit(chip, i, +chip.dataset.start, +chip.dataset.end);
+      state.selectedChip = chip;
+      chart.querySelectorAll('.chip.sel').forEach(c => c.classList.remove('sel'));
+      chip.classList.add('sel');
+      $('editSelectedBeat').disabled = !state.sourceKey;
+      highlightOnce();
     };
   });
   if (rows.length) selectChord(0);
 }
 
+$('editSelectedBeat').onclick = () => {
+  const chip = state.selectedChip;
+  if (chip) startEdit(chip, +chip.dataset.i, +chip.dataset.start, +chip.dataset.editEnd);
+};
+
 function selectChord(i) {
   state.selected = i;
-  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', +c.dataset.i === i));
   const row = state.rows[i];
   if (!row) return;
   const fn = { tonic: '토닉', subdominant: '서브도미넌트', dominant: '도미넌트', chromatic: '반음계' }[row.function] || row.function;
@@ -1378,22 +1391,30 @@ function highlight(t) {
   // 바뀐 칸만 손댄다.
   const active = findSegment(t);
   if (active !== state.activeSegment) {
-    (state.chipsBySegment[state.activeSegment] || []).forEach(c => {
-      c.classList.remove('on');
-      c.querySelector('.bar').style.width = '0';
-    });
     state.activeSegment = active;
     if (active >= 0 && active !== state.selected) selectChord(active);
   }
-  const chips = state.chipsBySegment[active];
-  if (!chips) return;
-
-  const seg = state.segments[active];
-  const pct = Math.min(100, ((t - seg.start) / Math.max(seg.end - seg.start, .001)) * 100) + '%';
-  chips.forEach(c => {
-    c.classList.add('on');
-    c.querySelector('.bar').style.width = pct;
-  });
+  const chips = state.timedChips || [];
+  let lo = 0, hi = chips.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (+chips[mid].dataset.start <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  const candidate = chips[lo - 1];
+  const chip = candidate && t < +candidate.dataset.end ? candidate : null;
+  if (state.activeChip !== chip) {
+    if (state.activeChip) {
+      state.activeChip.classList.remove('on');
+      state.activeChip.querySelector('.bar').style.width = '0';
+    }
+    state.activeChip = chip;
+  }
+  if (chip) {
+    const start = +chip.dataset.start, end = +chip.dataset.end;
+    chip.classList.add('on');
+    chip.querySelector('.bar').style.width = Math.max(0, Math.min(100, (t - start) / Math.max(end - start, .001) * 100)) + '%';
+  }
 }
 
 /** 재생 위치가 속한 구간. 대개 직전 구간 근처라 거기서부터 찾는다. */
@@ -1406,12 +1427,13 @@ function findSegment(t) {
   return segs[i] && t >= segs[i].start && t < segs[i].end ? i : -1;
 }
 
-function seek(i) {
+function seek(i, position) {
   const seg = state.segments[i];
   if (!seg) return;
+  const target = Number.isFinite(position) ? position : seg.start;
   state.clock = null;          // 탐색 후에는 보간 기준점을 다시 잡아야 한다
-  if (state.ytPlayer && state.ytPlayer.seekTo) state.ytPlayer.seekTo(Math.max(0, seg.start + state.videoOffset), true);
-  else if (!$('player').classList.contains('hidden')) $('player').currentTime = seg.start;
+  if (state.ytPlayer && state.ytPlayer.seekTo) state.ytPlayer.seekTo(Math.max(0, target + state.videoOffset), true);
+  else if (!$('player').classList.contains('hidden')) $('player').currentTime = target;
 }
 
 /* ---------- 유틸 ---------- */

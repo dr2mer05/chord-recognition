@@ -158,6 +158,22 @@ def test_bar_slots_show_where_a_chord_lands():
     assert [s["segment_end"] for s in slots] == [2.0, 2.0, 4.0, 4.0]
 
 
+def test_chart_uses_detected_beat_times_and_repeats_chord_at_bar_start():
+    from chordapp.models import AnalysisResult
+    from chordapp.theory.key import Key
+
+    result = AnalysisResult(
+        source='t', duration=4, tempo=120, key=Key.parse('C'), key_confidence=1,
+        segments=[ChordSegment(0, 4, Chord.parse('C'), 1, 1)],
+        beat_times=[0, .4, 1.0, 1.6, 2, 2.4, 3.0, 3.6],
+        downbeats=[0, 2, 4], beats_per_bar=4,
+    )
+    bars = result.bars()
+    assert [slot['start'] for slot in bars[0]['slots']] == [0, .4, 1, 1.6]
+    assert [bar['slots'][0]['chord'] for bar in bars] == ['C', 'C']
+    assert all(slot['chord'] is None for bar in bars for slot in bar['slots'][1:])
+
+
 def test_editing_a_middle_slot_splits_the_segment():
     """한 코드로 묶인 구간을 중간 박에서 갈라낼 수 있어야 한다."""
     from chordapp.service.corrections import Correction, apply_corrections
