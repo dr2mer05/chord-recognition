@@ -215,6 +215,47 @@ def upload(client, **overrides):
                        files={"file": ("원본.wav", audio_bytes(), "audio/wav")})
 
 
+def test_local_analysis_survives_restart_and_keeps_corrections(client, setup, monkeypatch):
+    from chordapp.api import server
+    service, _, _, calls, _ = setup
+    response = client.post('/api/analyze', files={'file': ('노래.wav', audio_bytes(), 'audio/wav')})
+    assert response.status_code == 200, response.text
+    saved = response.json()['saved_id']
+    source_key = response.json()['source_key']
+    assert len(calls) == 1
+    assert client.post('/api/corrections', json={'source_key': source_key, 'start': 0, 'end': 2,
+                                                 'chord': 'Am', 'original': 'C'}).status_code == 200
+    monkeypatch.setattr(service, 'cache', AnalysisCache(service.cache.db_path))
+    entries = client.get('/api/saved-analyses').json()['analyses']
+    assert len(entries) == 1 and entries[0]['name'] == '노래.wav'
+    reopened = client.get('/api/saved-analyses/' + saved).json()
+    assert reopened['segments'][0]['chord'] == 'Am'
+    assert client.get(reopened['audio_url']).status_code == 200
+    assert len(calls) == 1
+    assert service.cache.saved_analysis(saved) is not None
+    assert client.post('/api/corrections/tempo', json={'source_key': source_key, 'bpm': 90}).status_code == 200
+    adjusted = client.post('/api/saved-analyses/' + saved + '/reanalyze')
+    assert adjusted.status_code == 200, adjusted.text
+    assert len(calls) == 2
+    assert calls[-1][1]['tempo_override'] == 90
+    assert client.get('/api/saved-analyses/' + saved).json()['segments'][0]['chord'] == 'Am'
+    assert service.cache.saved_analysis(saved) is not None
+
+
+def test_legacy_cache_recovers_when_local_audio_still_exists(client, setup, tmp_path):
+    from chordapp.api import server
+    service, _, _, calls, _ = setup
+    server.UPLOAD_DIR.mkdir()
+    path = server.UPLOAD_DIR / 'old.wav'
+    path.write_bytes(audio_bytes())
+    service.analyze_file(path)
+    assert len(calls) == 1
+    listing = client.get('/api/saved-analyses').json()['analyses']
+    assert len(listing) == 1 and listing[0]['id'].startswith('legacy-')
+    assert client.get('/api/saved-analyses/' + listing[0]['id']).status_code == 200
+    assert len(calls) == 1
+
+
 def test_api_register_analyze_correct_reopen_and_revoke(client, setup):
     response = upload(client)
     assert response.status_code == 201

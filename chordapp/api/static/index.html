@@ -288,6 +288,11 @@
         <span id="fileStatus" class="hint"></span>
       </div>
       <p class="hint" style="margin:10px 0 0">별도 영상 연결 없이 이 파일의 코드 진행을 분석합니다.</p>
+      <details id="savedAnalysesPanel">
+        <summary>저장된 분석 다시 열기</summary>
+        <p class="hint">분석 결과와 음원은 이 서버에 저장됩니다. 이전 캐시에서 복구한 결과는 임시 파일 이름으로 표시될 수 있습니다.</p>
+        <div id="savedAnalyses" class="hint">목록을 불러오는 중…</div>
+      </details>
     </div>
   </section>
 
@@ -704,6 +709,34 @@ async function analyzeYouTube() {
 }
 
 /* ---------- 로컬 파일 ---------- */
+async function refreshSavedAnalyses() {
+  try {
+    const data = await getJSON('/api/saved-analyses');
+    $('savedAnalyses').innerHTML = data.analyses.length ? data.analyses.map((item, i) =>
+      `<div class="row"><span>${esc(item.name)} · ${Number(item.duration).toFixed(1)}초${item.audio_available ? '' : ' · 음원 없음'}</span> <button type="button" data-saved-index="${i}">다시 열기</button></div>`).join('') : '저장된 분석이 없습니다.';
+    $('savedAnalyses').querySelectorAll('[data-saved-index]').forEach(button => {
+      button.onclick = async () => {
+        const item = data.analyses[+button.dataset.savedIndex];
+        try {
+          const open = savedAnalysisLoader(item.id);
+          state.reload = open;
+          await open();
+          setText('fileStatus', '저장된 분석을 열었습니다.');
+        } catch (e) { setText('fileStatus', esc(e.message), true); }
+      };
+    });
+  } catch (e) { $('savedAnalyses').textContent = '저장된 분석을 불러오지 못했습니다.'; }
+}
+function savedAnalysisLoader(initialId) {
+  let id = initialId;
+  return async (reanalyze = false) => {
+    const url = '/api/saved-analyses/' + encodeURIComponent(id);
+    const report = reanalyze ? await postJSON(url + '/reanalyze', {}) : await getJSON(url);
+    if (report.saved_id) id = report.saved_id;
+    render(report, 0);
+  };
+}
+$('savedAnalysesPanel').addEventListener('toggle', () => { if ($('savedAnalysesPanel').open) refreshSavedAnalyses(); });
 $('goFile').onclick = async () => {
   const f = $('file').files[0];
   if (!f) { setText('fileStatus', '파일을 골라야 한다', true); return; }
@@ -720,9 +753,10 @@ $('goFile').onclick = async () => {
     const res = await fetch('/api/analyze', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(apiError(data, res.status));
-    state.reload = () => $('goFile').onclick();
+    state.reload = savedAnalysisLoader(data.saved_id);
     render(data, (performance.now() - t0) / 1000);
     setText('fileStatus', '');
+    if ($('savedAnalysesPanel').open) refreshSavedAnalyses();
   } catch (e) {
     setText('fileStatus', esc(e.message), true);
   } finally {
@@ -761,6 +795,7 @@ $('goprog').onclick = async () => {
 
 /* ---------- 결과 렌더 ---------- */
 function render(data, elapsed) {
+  state.canReanalyzeSaved = data.can_reanalyze_saved !== false;
   const origin = (data.cached ? '저장된 결과 · ' : '') + ({ cache: '이전 캐시', database: '코드 DB 참고 진행', audio: '오디오 분석' }[data.origin] || data.origin);
   $('meta').innerHTML = [
     ['소스', data.source], ['처리', origin], ['길이', data.duration.toFixed(1) + '초'],
@@ -998,6 +1033,7 @@ $('chordEditForm').onsubmit = async e => {
 /* ---------- 템포 지정 ---------- */
 async function applyTempo(bpm, beatOffset) {
   if (!state.sourceKey) return;
+  if (!state.canReanalyzeSaved) { setText('tempoStatus', '이전 분석 설정이나 음원이 없어 조정할 수 없습니다. 원본 파일을 다시 선택해 주세요.', true); return; }
   const buttons = ['tempoHalf', 'tempoDouble', 'tempo15down', 'tempo15up', 'tempoSet', 'beatReset'];
   buttons.forEach(id => $(id).disabled = true);
   setText('tempoStatus', '<span class="spin"></span> 다시 분석 중…');
@@ -1006,7 +1042,7 @@ async function applyTempo(bpm, beatOffset) {
       source_key: state.sourceKey, bpm,
       beat_offset: beatOffset === undefined ? null : beatOffset,
     });
-    await reloadAnalysis();
+    await reloadAnalysis(true);
     setText('tempoStatus', bpm
       ? `${Math.round(bpm)} BPM으로 지정됨${beatOffset !== undefined ? ' (탭으로 격자 고정)' : ''}`
       : '자동 추정으로 되돌림');
@@ -1048,6 +1084,7 @@ function updateBeatBadge() {
 
 $('beatReset').onclick = async () => {
   if (!state.sourceKey) return;
+  if (!state.canReanalyzeSaved) { setText('meterStatus', '원본 파일을 다시 선택해 주세요.', true); return; }
   $('beatReset').disabled = true;
   setText('meterStatus', '<span class="spin"></span> 되돌리는 중…');
   try {
@@ -1055,7 +1092,7 @@ $('beatReset').onclick = async () => {
     await postJSON('/api/corrections/meter', {
       source_key: state.sourceKey, beats_per_bar: null, downbeat_offset: 0,
     });
-    await reloadAnalysis();
+    await reloadAnalysis(true);
     setText('meterStatus', '자동 추정으로 되돌림');
     setText('tempoStatus', '');
   } catch (e) {
@@ -1185,6 +1222,7 @@ const METERS = [2, 3, 4, 6, 0];   // 0 = 자동 (추정할 수 없을 때 4박)
 
 async function applyMeter(beatsPerBar, offset) {
   if (!state.sourceKey) return;
+  if (!state.canReanalyzeSaved) { setText('meterStatus', '이전 분석 설정이나 음원이 없어 조정할 수 없습니다. 원본 파일을 다시 선택해 주세요.', true); return; }
   setText('meterStatus', '<span class="spin"></span> 다시 분석 중…');
   try {
     await postJSON('/api/corrections/meter', {
@@ -1192,7 +1230,7 @@ async function applyMeter(beatsPerBar, offset) {
       beats_per_bar: beatsPerBar,
       downbeat_offset: offset,
     });
-    await reloadAnalysis();
+    await reloadAnalysis(true);
     setText('meterStatus', '');
   } catch (e) {
     setText('meterStatus', esc(e.message), true);
@@ -1266,10 +1304,10 @@ function updateFixPanel() {
 }
 
 /** 교정 후 서버에서 다시 받아 반영한다 (캐시 HIT이라 빠르다) */
-async function reloadAnalysis() {
+async function reloadAnalysis(reanalyze = false) {
   if (typeof state.reload === 'function') {
     const keep = state.selected;
-    await state.reload();
+    await state.reload(reanalyze);
     if (keep >= 0 && keep < state.rows.length) selectChord(keep);
   }
 }

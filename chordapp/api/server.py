@@ -11,6 +11,9 @@ import tempfile
 import math
 import os
 import subprocess
+import json
+import uuid
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Literal, Optional
@@ -336,6 +339,12 @@ def analyze_youtube(req: YouTubeRequest) -> JSONResponse:
     return JSONResponse(report)
 
 
+def _snapshot_grid(result: AnalysisResult) -> dict:
+    source = service.corrections.source(result.source_key) or {}
+    return {'tempo_override': source.get('tempo'), 'meter_override': source.get('beats_per_bar'),
+            'downbeat_offset': int(source.get('downbeat_offset') or 0)}
+
+
 @app.post("/api/analyze")
 async def analyze(
     file: UploadFile = File(...),
@@ -369,7 +378,15 @@ async def analyze(
         # 프론트엔드에서 재생하려면 파일이 남아 있어야 한다
         stored = UPLOAD_DIR / f"{temp_path.stem}{suffix}"
         shutil.move(str(temp_path), stored)
+        result.audio_path = str(stored.resolve())
+        service._register(result)
+        saved_id = uuid.uuid4().hex
+        snapshot = result.to_dict()
+        snapshot['_analysis_options'] = {'key_override': key, 'vocabulary': vocabulary, 'max_seconds': max_seconds}
+        snapshot['_grid_state'] = _snapshot_grid(result)
+        service.cache.save_analysis(saved_id, snapshot, stored.name)
         report = service.full_report(result, limit=limit, key_override=key)
+        report['saved_id'] = saved_id
         report["audio_url"] = f"/api/audio/{stored.name}"
         return JSONResponse(report)
     except ValueError as exc:
@@ -378,6 +395,92 @@ async def analyze(
     except Exception as exc:
         temp_path.unlink(missing_ok=True)
         raise HTTPException(500, f"분석 실패: {exc}")
+
+
+def _recover_legacy_local_analyses() -> None:
+    """기존 캐시 중 남아 있는 로컬 파일의 결과를 보존한다."""
+    existing = set()
+    for row in service.cache.saved_analyses():
+        try:
+            existing.add((json.loads(row['payload']).get('source_key'), row['audio_name']))
+        except (ValueError, TypeError):
+            continue
+    for row in service.cache.legacy_audio_entries():
+        try:
+            payload = json.loads(row['payload'])
+            if not payload.get('source_key', '').startswith('file:'):
+                continue
+            path = Path(payload.get('audio_path') or '').resolve()
+            if path.parent != UPLOAD_DIR.resolve() or not path.is_file():
+                continue
+            if (payload['source_key'], path.name) in existing:
+                continue
+            AnalysisResult.from_dict(payload)
+            identifier = 'legacy-' + hashlib.sha256(row['key'].encode()).hexdigest()[:32]
+            service.cache.save_analysis(identifier, payload, path.name, row['created_at'])
+            existing.add((payload['source_key'], path.name))
+        except (ValueError, TypeError, KeyError, OSError):
+            continue
+
+
+@app.get('/api/saved-analyses')
+def saved_analyses() -> JSONResponse:
+    _recover_legacy_local_analyses()
+    entries = []
+    for row in service.cache.saved_analyses():
+        try:
+            payload = json.loads(row['payload'])
+            entries.append({'id': row['id'], 'name': payload.get('source', '이름 없는 음원'),
+                            'duration': payload.get('duration', 0), 'created_at': row['created_at'],
+                            'audio_available': (UPLOAD_DIR / row['audio_name']).is_file()})
+        except (ValueError, TypeError):
+            continue
+    return JSONResponse({'analyses': entries})
+
+
+@app.get('/api/saved-analyses/{identifier}')
+def open_saved_analysis(identifier: str) -> JSONResponse:
+    row = service.cache.saved_analysis(identifier)
+    if row is None:
+        raise HTTPException(404, '저장된 분석을 찾을 수 없습니다.')
+    snapshot = json.loads(row['payload'])
+    result = AnalysisResult.from_dict(snapshot)
+    result.cached = True
+    report = service.full_report(result)
+    report.update(snapshot.get('_grid_state', {'tempo_override': None, 'meter_override': None, 'downbeat_offset': 0}))
+    report['can_reanalyze_saved'] = '_analysis_options' in snapshot and (UPLOAD_DIR / row['audio_name']).is_file()
+    if '_grid_state' not in snapshot:
+        report['warnings'].append('이전 캐시의 박자 설정은 저장 당시 상태를 확인할 수 없습니다.')
+    path = (UPLOAD_DIR / row['audio_name']).resolve()
+    if path.parent == UPLOAD_DIR.resolve() and path.is_file():
+        report['audio_url'] = f'/api/audio/{path.name}'
+    return JSONResponse(report)
+
+
+@app.post('/api/saved-analyses/{identifier}/reanalyze')
+def reanalyze_saved_analysis(identifier: str) -> JSONResponse:
+    row = service.cache.saved_analysis(identifier)
+    if row is None:
+        raise HTTPException(404, '저장된 분석을 찾을 수 없습니다.')
+    path = (UPLOAD_DIR / row['audio_name']).resolve()
+    if path.parent != UPLOAD_DIR.resolve() or not path.is_file():
+        raise HTTPException(404, '음원이 없어 박자 설정을 다시 분석할 수 없습니다.')
+    snapshot = json.loads(row['payload'])
+    old = AnalysisResult.from_dict(snapshot)
+    if '_analysis_options' not in snapshot:
+        raise HTTPException(409, '이전 캐시에는 분석 설정이 없어 박자 재분석을 할 수 없습니다. 원본 파일을 다시 선택해 주세요.')
+    options = snapshot['_analysis_options']
+    result = service.analyze_file(path, source_key=old.source_key, **options)
+    result.source = old.source
+    saved_id = uuid.uuid4().hex
+    snapshot = result.to_dict()
+    snapshot['_analysis_options'] = options
+    snapshot['_grid_state'] = _snapshot_grid(result)
+    service.cache.save_analysis(saved_id, snapshot, path.name)
+    report = service.full_report(result)
+    report['saved_id'] = saved_id
+    report['audio_url'] = f'/api/audio/{path.name}'
+    return JSONResponse(report)
 
 
 @app.get("/api/audio/{name}")

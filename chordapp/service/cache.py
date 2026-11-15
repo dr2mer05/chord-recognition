@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     hits        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cache_namespace ON analysis_cache(namespace);
+CREATE TABLE IF NOT EXISTS saved_analyses (
+    id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    audio_name TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 """
 
 
@@ -67,6 +73,24 @@ class AnalysisCache:
         opts = json.dumps(options, sort_keys=True, ensure_ascii=False)
         digest = hashlib.sha256(f"{identifier}|{opts}".encode("utf-8")).hexdigest()[:32]
         return f"{namespace}:{digest}"
+
+    def save_analysis(self, identifier: str, payload: Dict[str, Any], audio_name: str, created_at: Optional[float] = None) -> None:
+        with self._connect() as con:
+            con.execute("INSERT OR IGNORE INTO saved_analyses (id, payload, audio_name, created_at) VALUES (?, ?, ?, ?)",
+                        (identifier, json.dumps(payload, ensure_ascii=False), audio_name, created_at or time.time()))
+
+    def saved_analyses(self):
+        with self._connect() as con:
+            return [dict(row) for row in con.execute("SELECT * FROM saved_analyses ORDER BY created_at DESC")]
+
+    def saved_analysis(self, identifier: str):
+        with self._connect() as con:
+            row = con.execute("SELECT * FROM saved_analyses WHERE id = ?", (identifier,)).fetchone()
+            return dict(row) if row else None
+
+    def legacy_audio_entries(self):
+        with self._connect() as con:
+            return [dict(row) for row in con.execute("SELECT key, payload, created_at FROM analysis_cache WHERE namespace = 'audio'")]
 
     def get(self, key: str, max_age: Optional[float] = None) -> Optional[Dict[str, Any]]:
         with self._connect() as con:
